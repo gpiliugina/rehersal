@@ -95,7 +95,7 @@ export function AudiencePreview() {
         ← Back
       </button>
 
-      <ScreenTitle overlay>Set the audience</ScreenTitle>
+      <ScreenTitle>Set the audience</ScreenTitle>
 
       <div className="scene-pill">
         <div className="seg-tabs" role="tablist" aria-label="Audience setting">

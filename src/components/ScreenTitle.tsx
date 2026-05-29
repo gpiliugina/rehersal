@@ -2,19 +2,23 @@ import type { ReactNode } from 'react';
 
 interface ScreenTitleProps {
   children: ReactNode;
-  /** Subtle text shadow for titles that float over a 3D scene or video frame. */
-  overlay?: boolean;
+  /**
+   * Render as the plain page hero (no glass pill). Used only by Home, whose
+   * title doubles as the landing headline. Every other screen gets the pill.
+   */
+  hero?: boolean;
 }
 
 /**
- * Single source of truth for every screen title in the app. Position,
- * alignment, and typography come from `.screen-title`; nothing about the call
- * site should override them. If a screen needs a back button or other corner
- * control, render those separately — do not wrap or nest this component.
+ * Single source of truth for every screen title in the app. By default it
+ * renders as a floating frosted-glass pill, positioned identically on every
+ * screen (top, centered) — the visionOS-style language shared with the app's
+ * other floating surfaces. Nothing at the call site should override its
+ * position, typography, or glass treatment.
  */
-export function ScreenTitle({ children, overlay = false }: ScreenTitleProps) {
+export function ScreenTitle({ children, hero = false }: ScreenTitleProps) {
   return (
-    <h1 className={`screen-title${overlay ? ' screen-title--overlay' : ''}`}>
+    <h1 className={`screen-title${hero ? ' screen-title--hero' : ''}`}>
       {children}
     </h1>
   );

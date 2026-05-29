@@ -22,6 +22,15 @@ import type {
 // Pre-generate up to this many seconds; rehearsal truncates to elapsed time.
 export const MAX_SESSION_SEC = 8 * 60;
 
+// Demo rehearsals (and the mock video) are short (~5s). The live preview uses
+// a marker arc compressed into this window so the audience visibly reacts
+// during the clip instead of spacing events out as if for a multi-minute talk.
+export const DEMO_DURATION_SEC = 5;
+
+// Clips at or under this length get the compressed demo arc (see
+// spreadMarkers); longer rehearsals keep the original even-spread logic.
+const DEMO_MAX_SEC = 10;
+
 interface BuildArgs {
   roomType: RoomType;
   audience: AudienceConfig;
@@ -37,7 +46,12 @@ interface BuildArgs {
  */
 export function buildSession({ roomType, audience }: BuildArgs): Session {
   const id = newSessionId();
-  const { timeline, markers } = simulate(audience, MAX_SESSION_SEC, id);
+  const { timeline } = simulate(audience, MAX_SESSION_SEC, id);
+  // The live Rehearsing scene reads these markers, so compress them into the
+  // short demo window — otherwise the pre-rolled events sit minutes apart and
+  // never fire during a ~5s demo. finalizeSession re-places them to the actual
+  // rehearsed duration for the Insights replay.
+  const markers = spreadMarkers(DEMO_DURATION_SEC, id);
   return {
     id,
     createdAt: Date.now(),
@@ -241,7 +255,40 @@ const LABELS: Record<MarkerKind, string[]> = {
  *
  * Deterministic given the same seed so replays surface identical moments.
  */
+// A varied, evenly-spaced reaction arc for short demo clips: a strong moment,
+// a filler dip, a long pause, a lost-attention drift, a voice wobble (and a
+// second strong moment for the longest clips). Hand-ordered so the crowd shows
+// its full range; deterministic, so the live preview and replay match.
+const DEMO_ARC: MarkerKind[] = [
+  'strongMoment',
+  'fillerWords',
+  'longPause',
+  'lostAttention',
+  'voiceWavered',
+  'strongMoment',
+];
+
+function spreadMarkersShort(duration: number): Marker[] {
+  const count = clamp(Math.round(duration), 4, 6);
+  const labelCycle: Partial<Record<MarkerKind, number>> = {};
+  const out: Marker[] = [];
+  for (let i = 0; i < count; i++) {
+    const kind = DEMO_ARC[i];
+    // Even interior spacing: e.g. a 5s/5-marker clip lands ~0.8s apart across
+    // [0.8s … 4.2s], so reactions play through the whole demo.
+    const t = (duration * (i + 1)) / (count + 1);
+    const labels = LABELS[kind];
+    const idx = (labelCycle[kind] ?? 0) % labels.length;
+    labelCycle[kind] = (labelCycle[kind] ?? 0) + 1;
+    out.push({ t, kind, label: labels[idx] });
+  }
+  return out;
+}
+
 function spreadMarkers(duration: number, seed: string): Marker[] {
+  if (duration <= DEMO_MAX_SEC) {
+    return spreadMarkersShort(duration);
+  }
   const rng = makeRng(seed + ':markers');
   // 4 markers for very short demos, 7 for longer rehearsals.
   const count = clamp(Math.round(duration / 10), 4, 7);

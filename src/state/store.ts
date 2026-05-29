@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { loadEvents, newEventId, saveEvents } from '../lib/storage';
+import { clearAllRecordings, deleteRecording } from '../lib/recordings';
 import { buildSession, finalizeSession } from '../sim/session';
 import type {
   AudienceConfig,
@@ -47,11 +48,16 @@ interface State {
   beginRehearsal: () => void;
   editSetup: (eventId: string, returnTo: Screen) => void;
   cancelEditSetup: () => void;
-  endRehearsal: (elapsedSec: number) => void;
+  endRehearsal: (
+    elapsedSec: number,
+    hasRecording?: boolean,
+    posterDataUrl?: string,
+  ) => void;
   cancelRehearsal: () => void;
   openInsights: (eventId: string, sessionId: string) => void;
   openProgress: (eventId: string) => void;
   goHomeExpandingActiveEvent: () => void;
+  deleteAllRecordings: () => void;
 }
 
 const DEFAULT_AUDIENCE: AudienceConfig = {
@@ -181,6 +187,12 @@ export const useStore = create<State>((set, get) => ({
    * pointing at a stale id.
    */
   deleteEvent: (eventId) => {
+    // Best-effort: purge any on-device recordings for this talk's rehearsals
+    // so deleting a talk doesn't orphan blobs in IndexedDB.
+    const removed = get().events.find((e) => e.id === eventId);
+    removed?.sessions.forEach((s) => {
+      if (s.hasRecording) deleteRecording(s.id).catch(() => {});
+    });
     const next = get().events.filter((e) => e.id !== eventId);
     saveEvents(next);
     set((s) => ({
@@ -279,10 +291,14 @@ export const useStore = create<State>((set, get) => ({
     });
   },
 
-  endRehearsal: (elapsedSec) => {
+  endRehearsal: (elapsedSec, hasRecording = false, posterDataUrl) => {
     const { activeSession, activeEventId, events } = get();
     if (!activeSession || !activeEventId) return;
-    const finalized = finalizeSession(activeSession, elapsedSec);
+    const finalized = {
+      ...finalizeSession(activeSession, elapsedSec),
+      hasRecording,
+      ...(posterDataUrl ? { posterDataUrl } : {}),
+    };
     const nextEvents = updateEvent(events, activeEventId, (e) => ({
       ...e,
       sessions: [finalized, ...e.sessions],
@@ -325,6 +341,29 @@ export const useStore = create<State>((set, get) => ({
       editSetupReturnTo: null,
       screen: 'home',
     });
+  },
+
+  /**
+   * Wipe every in-browser recording (IndexedDB), app-wide, and strip the
+   * recording metadata (hasRecording + poster) from all sessions so cards,
+   * badges, and Insights reflect that the videos are gone — Insights now falls
+   * back to the demo video. Progress data (scores/diagnostics) is untouched.
+   * Files already in the user's Downloads folder are outside our reach.
+   */
+  deleteAllRecordings: () => {
+    clearAllRecordings().catch((e) =>
+      console.warn('Could not clear recordings store', e),
+    );
+    const next = get().events.map((e) => ({
+      ...e,
+      sessions: e.sessions.map((s) =>
+        s.hasRecording || s.posterDataUrl
+          ? { ...s, hasRecording: false, posterDataUrl: undefined }
+          : s,
+      ),
+    }));
+    saveEvents(next);
+    set({ events: next });
   },
 }));
 

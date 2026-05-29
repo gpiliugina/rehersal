@@ -4,7 +4,7 @@ import { Avatar } from './Avatar';
 import { Room } from './Room';
 import { layoutAudience } from './AudienceLayout';
 import { avatarAttention, avatarWarmth } from './ReplayController';
-import type { RoomType } from '../state/types';
+import type { Marker, RoomType } from '../state/types';
 
 interface Props {
   roomType: RoomType;
@@ -17,6 +17,10 @@ interface Props {
   cameraMode?: 'firstPerson' | 'preview';
   // Disable subtle idle animation (used for thumbnails).
   freeze?: boolean;
+  // The session-event timeline + current playhead. When present, avatars react
+  // to markers as the playhead crosses them (live rehearsal + Insights replay).
+  markers?: Marker[];
+  playheadSec?: number;
 }
 
 export function AudiencePreview({
@@ -26,6 +30,8 @@ export function AudiencePreview({
   attention,
   cameraMode = 'preview',
   freeze,
+  markers,
+  playheadSec,
 }: Props) {
   const slots = useMemo(() => layoutAudience(roomType, size), [
     roomType,
@@ -54,6 +60,8 @@ export function AudiencePreview({
           warmth={avatarWarmth(slot.variant, warmth)}
           attention={avatarAttention(slot.variant, attention)}
           freeze={freeze}
+          markers={markers}
+          playheadSec={playheadSec}
         />
       ))}
     </Canvas>

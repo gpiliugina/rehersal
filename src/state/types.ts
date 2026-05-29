@@ -97,6 +97,14 @@ export interface Session {
   markers: Marker[];
   scores: Scores;
   diagnostics: Diagnostics;
+  // True when the user's real camera/mic recording was saved for this
+  // rehearsal (stored in IndexedDB, keyed by `id`). Absent on older sessions
+  // and on rehearsals where recording was skipped/unavailable — Insights then
+  // falls back to the mock video.
+  hasRecording?: boolean;
+  // Small JPEG data URL of the recording's first frame, used as the card
+  // thumbnail and video poster. Absent when there's no recording.
+  posterDataUrl?: string;
 }
 
 // The default room + audience the user wants to rehearse against for a

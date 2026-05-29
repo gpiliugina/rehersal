@@ -2,6 +2,15 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group } from 'three';
 import type { AvatarSlot } from './AudienceLayout';
+import type { Marker } from '../state/types';
+import {
+  makePersonality,
+  decide,
+  buildReaction,
+  envelope,
+  PARTICIPATION,
+  type ReactionInstance,
+} from './audienceAnimation';
 
 interface Props {
   slot: AvatarSlot;
@@ -18,6 +27,11 @@ interface Props {
   attention: number;
   // Disable subtle idle animation (used for static thumbnails).
   freeze?: boolean;
+  // The pre-rolled session-event timeline. When the playhead crosses one of
+  // these, the avatar may play a reaction. Omitted in static previews.
+  markers?: Marker[];
+  // Current playback position (session seconds). Drives reaction firing.
+  playheadSec?: number;
 }
 
 const PALETTES = [
@@ -29,36 +43,33 @@ const PALETTES = [
   { shirt: '#6a8587', skin: '#ecceaa' },
 ];
 
-export function Avatar({ slot, warmth, attention, freeze }: Props) {
-  const ref = useRef<Group>(null);
+export function Avatar({
+  slot,
+  warmth,
+  attention,
+  freeze,
+  markers,
+  playheadSec = 0,
+}: Props) {
+  const bodyRef = useRef<Group>(null);
+  const headRef = useRef<Group>(null);
+  const eyesRef = useRef<Group>(null);
   const colors = useMemo(
     () => PALETTES[Math.floor(slot.variant * PALETTES.length) % PALETTES.length],
     [slot.variant],
   );
 
-  const phase = slot.variant * Math.PI * 2;
-
-  useFrame((state) => {
-    if (!ref.current || freeze) return;
-    const t = state.clock.elapsedTime;
-    // Subtle idle motion — breathing-like sway, less when disengaged.
-    const breath = Math.sin(t * 0.9 + phase) * 0.012;
-    const sway = Math.sin(t * 0.55 + phase * 1.3) * 0.02 * (0.5 + attention);
-    ref.current.position.y = breath;
-    ref.current.rotation.z = sway * 0.4;
-    // Head pitch + yaw — attention drives where they're looking. Low
-    // attention pitches down and yaws side-to-side as they "drift".
-    const head = ref.current.getObjectByName('head');
-    if (head) {
-      const targetPitch = (1 - attention) * -0.42;
-      head.rotation.x += (targetPitch - head.rotation.x) * 0.05;
-      // Fidget — periodic side glance that's stronger when disengaged.
-      const fidget =
-        (1 - attention) * Math.sin(t * 0.7 + phase * 1.7) * 0.4 +
-        (1 - attention) * Math.sin(t * 0.23 + phase) * 0.15;
-      head.rotation.y += (fidget - head.rotation.y) * 0.05;
-    }
-  });
+  // Stable per-avatar personality + seed. Mix position into the seed so two
+  // slots that happen to share a `variant` still get distinct phases.
+  const seed = useMemo(
+    () =>
+      (Math.floor(
+        (slot.variant * 9301 + slot.position[0] * 131 + slot.position[2] * 17) *
+          1000,
+      ) >>> 0) || 1,
+    [slot.variant, slot.position],
+  );
+  const p = useMemo(() => makePersonality(seed), [seed]);
 
   // Posture from WARMTH: open & leaning forward (warm) vs closed off (cold).
   //   leanX:  +ve = lean forward; -ve = pull back/recline
@@ -67,12 +78,102 @@ export function Avatar({ slot, warmth, attention, freeze }: Props) {
   const leanX = (warmth - 0.5) * 0.5; // -0.25 .. +0.25 rad
   const armTuck = Math.max(0, 0.5 - warmth); // 0..0.5
   const shoulderRoll = (0.5 - warmth) * 0.25; // negative warmth → roll fwd
+  // Baseline gaze/head bias from the audience-setup sliders.
+  const pitchBase = (1 - attention) * -0.42; // distracted → droops down
+  const headRollBase = (0.5 - warmth) * 0.18; // skeptical → slight tilt
 
   const seatedYOffset = slot.pose === 'seated' ? -0.25 : 0;
 
+  // --- live animation state (refs so it survives re-renders) ---
+  const playheadRef = useRef(playheadSec);
+  playheadRef.current = playheadSec;
+  const processedUpTo = useRef(playheadSec);
+  const reaction = useRef<ReactionInstance | null>(null);
+  const smoothYaw = useRef(0);
+  const turn = useRef({ target: 0, until: 0, next: -1 });
+  const blink = useRef({ until: 0, next: -1 });
+
+  useFrame((state) => {
+    const body = bodyRef.current;
+    const head = headRef.current;
+    if (!body || !head || freeze) return;
+    const t = state.clock.elapsedTime;
+
+    // --- reaction firing: detect playhead crossing a marker ---
+    const playhead = playheadRef.current;
+    if (playhead < processedUpTo.current - 0.4) {
+      // Scrubbed backward — re-arm so forward crossings fire again.
+      processedUpTo.current = playhead;
+    }
+    if (markers) {
+      for (let i = 0; i < markers.length; i++) {
+        const m = markers[i];
+        if (m.t > processedUpTo.current && m.t <= playhead) {
+          const part = PARTICIPATION[m.kind] ?? 0;
+          if (part > 0 && decide(seed, i, 1) < part) {
+            const inst = buildReaction(m.kind, t, (salt) => decide(seed, i, salt), p);
+            if (inst) reaction.current = inst;
+          }
+        }
+      }
+      processedUpTo.current = Math.max(processedUpTo.current, playhead);
+    }
+
+    // --- LAYER 1: ambient (always on) ---
+    const breathe = Math.sin(t * p.breatheOmega + p.breathePhase) * 0.012;
+    const shift = Math.sin(t * p.shiftOmega + p.shiftPhase) * 0.035;
+
+    // Idle head-turn: drift to a random ±15° target, hold, return to centre.
+    // Distracted crowds turn more often and further; engaged crowds hold gaze.
+    const T = turn.current;
+    if (T.next < 0) T.next = t + p.headTurnOffset;
+    const mag = 0.26 * (0.6 + (1 - attention) * 0.8);
+    if (T.target === 0) {
+      if (t >= T.next) {
+        T.target = (p.rng() < 0.5 ? -1 : 1) * mag * (0.5 + p.rng() * 0.5);
+        T.until = t + 2 + p.rng() * 2;
+      }
+    } else if (t >= T.until) {
+      T.target = 0;
+      T.next = t + (18 + p.rng() * 7) * (0.6 + attention * 0.8);
+    }
+    smoothYaw.current += (T.target - smoothYaw.current) * 0.05;
+
+    // Blink: brief eye squash every ~4–8s.
+    const B = blink.current;
+    if (B.next < 0) B.next = t + p.blinkPhase + 3;
+    if (t >= B.next) {
+      B.until = t + 0.12;
+      B.next = t + 4 + p.rng() * 4;
+    }
+
+    // --- LAYER 2: active reaction (enveloped, overrides relevant transforms) ---
+    let rPosZ = 0, rBodyX = 0, rPitch = 0, rYaw = 0, rRoll = 0;
+    const inst = reaction.current;
+    if (inst) {
+      if (t >= inst.startAt + inst.dur) {
+        reaction.current = null;
+      } else {
+        const e = envelope(inst, t);
+        rPosZ = inst.posZ * e;
+        rBodyX = inst.bodyRotX * e;
+        rPitch = inst.pitch * e;
+        rYaw = inst.yaw * e;
+        rRoll = inst.roll * e;
+      }
+    }
+
+    // --- blend + apply ---
+    body.position.set(0, seatedYOffset + breathe, rPosZ);
+    body.rotation.set(leanX + rBodyX, 0, shoulderRoll + shift);
+    head.rotation.set(pitchBase + rPitch, smoothYaw.current + rYaw, headRollBase + rRoll);
+    if (eyesRef.current) {
+      eyesRef.current.scale.y = t < B.until ? 0.15 : 1;
+    }
+  });
+
   return (
     <group
-      ref={ref}
       position={slot.position}
       rotation={[0, slot.rotationY, 0]}
     >
@@ -105,6 +206,7 @@ export function Avatar({ slot, warmth, attention, freeze }: Props) {
         </group>
       )}
       <group
+        ref={bodyRef}
         position={[0, seatedYOffset, 0]}
         rotation={[leanX, 0, shoulderRoll]}
       >
@@ -117,23 +219,27 @@ export function Avatar({ slot, warmth, attention, freeze }: Props) {
             to the body, suggesting "closed off". */}
         <Arm side={-1} y={slot.pose === 'seated' ? 0.85 : 1.0} tuck={armTuck} color={colors.shirt} />
         <Arm side={+1} y={slot.pose === 'seated' ? 0.85 : 1.0} tuck={armTuck} color={colors.shirt} />
-        {/* Head */}
+        {/* Head — pivots about the sphere centre for nods / turns / tilts. */}
         <group
-          name="head"
+          ref={headRef}
           position={[0, slot.pose === 'seated' ? 1.45 : 1.6, 0]}
+          rotation={[pitchBase, 0, headRollBase]}
         >
           <mesh>
             <sphereGeometry args={[0.21, 18, 14]} />
             <meshStandardMaterial color={colors.skin} roughness={0.8} />
           </mesh>
-          <mesh position={[-0.075, 0.03, 0.18]}>
-            <sphereGeometry args={[0.022, 8, 8]} />
-            <meshStandardMaterial color="#1f2230" />
-          </mesh>
-          <mesh position={[0.075, 0.03, 0.18]}>
-            <sphereGeometry args={[0.022, 8, 8]} />
-            <meshStandardMaterial color="#1f2230" />
-          </mesh>
+          {/* Eyes — grouped so a quick y-squash reads as a blink. */}
+          <group ref={eyesRef}>
+            <mesh position={[-0.075, 0.03, 0.18]}>
+              <sphereGeometry args={[0.022, 8, 8]} />
+              <meshStandardMaterial color="#1f2230" />
+            </mesh>
+            <mesh position={[0.075, 0.03, 0.18]}>
+              <sphereGeometry args={[0.022, 8, 8]} />
+              <meshStandardMaterial color="#1f2230" />
+            </mesh>
+          </group>
         </group>
         {/* Legs — standing avatars only */}
         {slot.pose === 'standing' && (

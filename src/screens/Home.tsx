@@ -35,7 +35,7 @@ export function Home() {
       <div className="home__brand">
         <span className="logo__dot" /> Rehearsal
       </div>
-      <ScreenTitle>Let’s train your speech.</ScreenTitle>
+      <ScreenTitle hero>Let’s train your speech.</ScreenTitle>
 
       <TalksCarousel
         events={events}
@@ -214,7 +214,7 @@ function TalksCarousel({
   const positionLabel =
     focusedIndex === 0
       ? events.length === 0
-        ? 'Add your first talk'
+        ? '' // empty state: the "+ New talk" card speaks for itself
         : `Add a new talk · ${events.length} ${events.length === 1 ? 'talk' : 'talks'} below`
       : `Talk ${focusedIndex} of ${events.length}`;
 
@@ -280,6 +280,16 @@ function TalksCarousel({
   );
 }
 
+// Tiny camera glyph marking a talk that has at least one recorded rehearsal.
+function RecDot() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M15 10l4.553 -2.276A1 1 0 0 1 21 8.618v6.764a1 1 0 0 1 -1.447 .894L15 14v-4z" />
+      <rect x="3" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 function ChevronLeftIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -308,9 +318,6 @@ function NewTalkCard({ onClick }: { onClick: () => void }) {
           </svg>
         </span>
         <span className="newtalk-card__label">New talk</span>
-        <span className="newtalk-card__hint muted small">
-          Name a new talk to start rehearsing
-        </span>
       </div>
     </button>
   );
@@ -337,6 +344,7 @@ function TalkCard({
   const totalSessions = event.sessions.length;
   const latest = event.sessions[0];
   const setup = event.homeSetup;
+  const anyRecorded = event.sessions.some((s) => s.hasRecording);
 
   const peekBack1 = totalSessions >= 2;
   const peekBack2 = totalSessions >= 3;
@@ -369,6 +377,11 @@ function TalkCard({
           {hasSessions
             ? `${totalSessions} ${totalSessions === 1 ? 'rehearsal' : 'rehearsals'} · last ${relativeTime(latest.createdAt)}`
             : 'no rehearsals yet'}
+          {anyRecorded && (
+            <span className="rec-badge rec-badge--card" title="Has recordings">
+              <RecDot /> recorded
+            </span>
+          )}
         </div>
       </header>
 
@@ -382,6 +395,13 @@ function TalkCard({
               onClick={onOpenProgress}
               aria-label={`Open progress for ${event.name}`}
               title="See progress"
+              style={
+                latest?.posterDataUrl
+                  ? {
+                      backgroundImage: `url(${latest.posterDataUrl}), linear-gradient(135deg, #4a4350 0%, #2c303d 100%)`,
+                    }
+                  : undefined
+              }
             >
               <span className="talk-pile__play" aria-hidden>
                 <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
@@ -605,7 +625,7 @@ function DeleteConfirmModal({
   );
 }
 
-// ====== Name-talk modal (unchanged) =======================================
+// ====== Name-talk modal ===================================================
 
 interface NameTalkModalProps {
   onClose: () => void;
@@ -665,3 +685,4 @@ function NameTalkModal({ onClose }: NameTalkModalProps) {
     </div>
   );
 }
+

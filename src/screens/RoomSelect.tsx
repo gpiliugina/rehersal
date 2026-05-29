@@ -152,7 +152,7 @@ export function RoomSelect() {
         ← Back
       </button>
 
-      <ScreenTitle overlay>Pick a room</ScreenTitle>
+      <ScreenTitle>Pick a room</ScreenTitle>
 
       <button
         className="scene-screen__edge-nav left"

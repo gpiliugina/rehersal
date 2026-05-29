@@ -11,7 +11,15 @@ import { buildInsightCards } from '../lib/takeaways';
 import type { InsightCard } from '../lib/takeaways';
 import { SCORE_EXPLAINERS } from '../lib/scoring';
 import type { TimelinePoint } from '../state/types';
+import {
+  getRecording,
+  recordingStorageAvailable,
+  hasSeenStorageNotice,
+  markStorageNoticeSeen,
+} from '../lib/recordings';
 
+// Fallback used for older rehearsals (no recording) or when a real recording
+// can't be loaded. Real recordings are object URLs created from IndexedDB.
 const VIDEO_SRC = '/video-recording.mp4';
 
 export function Insights() {
@@ -24,6 +32,21 @@ export function Insights() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoOk, setVideoOk] = useState(true);
+  // Object URL for this rehearsal's real recording, or null to use the mock.
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
+  const recordingUrlRef = useRef<string | null>(null);
+  recordingUrlRef.current = recordingUrl;
+  // True once we've finished checking IndexedDB for this rehearsal's recording.
+  // Gates the "Demo video" label so it doesn't flash before the lookup resolves.
+  const [recordingChecked, setRecordingChecked] = useState(false);
+  const videoSrc = recordingUrl ?? VIDEO_SRC;
+  // We're showing the demo fallback (not a real recording) once the lookup is
+  // done and produced nothing playable — skipped, deleted, old, or corrupt.
+  const usingFallback = recordingChecked && !recordingUrl;
+  // One-time "your recording is saved" notice, shown the first time Insights
+  // ever loads with a real recording. `noticeClosing` drives the soft exit.
+  const [showStorageNotice, setShowStorageNotice] = useState(false);
+  const [noticeClosing, setNoticeClosing] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -55,11 +78,74 @@ export function Insights() {
   function markerVideoT(sessionT: number): number {
     const v = videoRef.current;
     const sDur = session?.durationSec ?? 0;
-    if (videoOk && v && v.duration > 0 && sDur > 0) {
+    // WebM recordings can report duration === Infinity until seeked, so guard
+    // for a finite value before mapping (otherwise we'd seek to Infinity).
+    if (videoOk && v && Number.isFinite(v.duration) && v.duration > 0 && sDur > 0) {
       return (sessionT / sDur) * v.duration;
     }
     return sessionT;
   }
+
+  // Pull this rehearsal's real recording (if any) from IndexedDB and expose it
+  // as an object URL. Falls back silently to the mock for older/skipped
+  // rehearsals or on any read error. Revokes the URL on unmount/session change.
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setVideoOk(true);
+    setRecordingUrl(null);
+    setRecordingChecked(false);
+    if (session?.hasRecording && recordingStorageAvailable()) {
+      getRecording(session.id)
+        .then((rec) => {
+          if (cancelled) return;
+          if (rec) {
+            createdUrl = URL.createObjectURL(rec.blob);
+            setRecordingUrl(createdUrl);
+          }
+          setRecordingChecked(true);
+        })
+        .catch((e) => {
+          console.warn('Could not load recording — using mock video', e);
+          if (!cancelled) setRecordingChecked(true);
+        });
+    } else {
+      setRecordingChecked(true);
+    }
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [session?.id, session?.hasRecording]);
+
+  // First-ever real recording → show the storage notice once, then never
+  // again (the flag is set immediately, on show, not on dismiss).
+  useEffect(() => {
+    if (!recordingUrl || hasSeenStorageNotice()) return;
+    markStorageNoticeSeen();
+    setShowStorageNotice(true);
+    const t = window.setTimeout(() => dismissStorageNotice(), 8000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingUrl]);
+
+  // Play the exit animation, then unmount.
+  function dismissStorageNotice() {
+    setNoticeClosing(true);
+    window.setTimeout(() => {
+      setShowStorageNotice(false);
+      setNoticeClosing(false);
+    }, 260);
+  }
+
+  // Reload the media element whenever the source changes (mock ⇄ recording).
+  // Start muted so the seek-to-0.1 still-frame paints before any interaction.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = true;
+    v.load();
+  }, [videoSrc]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -80,7 +166,17 @@ export function Insights() {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => setIsPlaying(false);
-    const onError = () => setVideoOk(false);
+    const onError = () => {
+      // A corrupt recording falls back to the mock video silently; the mock
+      // itself failing falls back to the canvas MockVideoFrame.
+      if (recordingUrlRef.current) {
+        console.warn('Recording failed to play — falling back to mock video');
+        URL.revokeObjectURL(recordingUrlRef.current);
+        setRecordingUrl(null);
+      } else {
+        setVideoOk(false);
+      }
+    };
     v.addEventListener('loadedmetadata', onLoaded);
     v.addEventListener('loadeddata', onLoadedData);
     v.addEventListener('timeupdate', onTime);
@@ -225,8 +321,8 @@ export function Insights() {
           <video
             ref={videoRef}
             className="insights-screen__videoel"
-            src={VIDEO_SRC}
-            poster="/video-poster.jpg"
+            src={videoSrc}
+            poster={session.posterDataUrl ?? '/video-poster.jpg'}
             playsInline
             preload="metadata"
             controls={false}
@@ -239,7 +335,7 @@ export function Insights() {
         <div className="insights-screen__top">
           <button className="btn btn--quiet" onClick={goHome}>← Back</button>
         </div>
-        <ScreenTitle overlay>Insights</ScreenTitle>
+        <ScreenTitle>Insights</ScreenTitle>
         {/* Quiet header line, top-left under the back button. Sessions are
             stored newest-first so attempt# = total - index. */}
         {event && (() => {
@@ -253,6 +349,13 @@ export function Insights() {
             </div>
           );
         })()}
+
+        {/* Fallback label — only when there's no real recording to play. */}
+        {usingFallback && (
+          <div className="demo-tag">
+            Demo video — no recording for this rehearsal
+          </div>
+        )}
 
         {/* Center play button — only while paused/ended */}
         {!isPlaying && (
@@ -289,6 +392,8 @@ export function Insights() {
                 warmth={session.audience.warmth}
                 attention={attention}
                 cameraMode="firstPerson"
+                markers={session.markers}
+                playheadSec={sessionPlayhead}
               />
             </div>
           </div>
@@ -410,6 +515,26 @@ export function Insights() {
           </div>
         )}
       </div>
+
+      {showStorageNotice && (
+        <div
+          className={`glass-toast ${noticeClosing ? 'is-closing' : ''}`}
+          role="status"
+        >
+          <button
+            className="glass-toast__close"
+            onClick={dismissStorageNotice}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+          <div className="glass-toast__title">Your recording is saved</div>
+          <div className="glass-toast__body">
+            <span>A copy is in your Downloads folder.</span>
+            <span>Another stays in this browser so you can watch it back here.</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -120,7 +120,10 @@ export function Rehearsing() {
     bankedSecRef.current = 0;
     setElapsed(0);
     lastResumeRef.current = performance.now();
-    if (record && recorderRef.current.status === 'ready') {
+    // start() checks the live stream itself; don't gate on the `status` state —
+    // right after requestAccess() that state hasn't propagated to the ref yet,
+    // which previously skipped recording entirely (Insights fell back to demo).
+    if (record) {
       recorderRef.current.start();
     }
     // Resume the audio analysis context WITHIN this click gesture (otherwise it

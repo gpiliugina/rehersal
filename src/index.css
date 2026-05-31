@@ -3976,6 +3976,57 @@ input.setup-size__slider {
   width: 64px;
   height: 64px;
 }
+
+/* ===== Home empty / first-time state =====================================
+   No cards: a centred prompt + the glow-wash CTA. Logo + orbit aura stay. */
+.home-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.home-empty > * { pointer-events: auto; }
+.home-empty__headline {
+  margin: 0;
+  font-family: var(--font-title);
+  font-weight: 500;
+  font-size: clamp(36px, 7vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-deep);
+}
+.home-empty__sub {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+}
+/* CTA sits in-flow within the centred block (not pinned to the bottom). */
+.home-empty .home__plus-wrap {
+  position: static;
+  transform: none;
+  width: auto;
+  height: auto;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.home__plus-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
 .home__plus {
   position: relative;
   z-index: 1;

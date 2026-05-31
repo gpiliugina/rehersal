@@ -49,7 +49,12 @@ export function getRecordingDecision(): RecordingDecision | null {
 }
 
 function pickMimeType(): string {
-  const prefs = ['video/webm;codecs=vp9,opus', 'video/webm'];
+  const prefs = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ];
   for (const t of prefs) {
     if (
       typeof MediaRecorder !== 'undefined' &&

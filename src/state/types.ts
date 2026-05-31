@@ -1,7 +1,6 @@
 export type Screen =
   | 'home'
-  | 'roomSelect'
-  | 'audiencePreview'
+  | 'setup'
   | 'rehearsing'
   | 'insights'
   | 'progress';

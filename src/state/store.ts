@@ -56,6 +56,7 @@ interface State {
   cancelRehearsal: () => void;
   openInsights: (eventId: string, sessionId: string) => void;
   openProgress: (eventId: string) => void;
+  deleteRehearsal: (eventId: string, sessionId: string) => void;
   goHomeExpandingActiveEvent: () => void;
   deleteAllRecordings: () => void;
 }
@@ -116,7 +117,7 @@ export const useStore = create<State>((set, get) => ({
       draft: freshDraft(),
       activeSession: null,
       editSetupReturnTo: null,
-      screen: 'roomSelect',
+      screen: 'setup',
     });
   },
 
@@ -161,7 +162,7 @@ export const useStore = create<State>((set, get) => ({
       activeSession: null,
       editSetupReturnTo: null,
       rehearsalSource: null,
-      screen: 'roomSelect',
+      screen: 'setup',
     });
   },
 
@@ -247,7 +248,7 @@ export const useStore = create<State>((set, get) => ({
       activeSession: session,
       // First-rehearsal flow lands here from the Audience screen, so cancel
       // returns there too.
-      rehearsalSource: 'audiencePreview',
+      rehearsalSource: 'setup',
       screen: 'rehearsing',
     });
   },
@@ -265,7 +266,7 @@ export const useStore = create<State>((set, get) => ({
       activeEventId: eventId,
       draft: setup ? draftFromSetup(setup) : freshDraft(),
       editSetupReturnTo: returnTo,
-      screen: 'roomSelect',
+      screen: 'setup',
     });
   },
 
@@ -333,6 +334,49 @@ export const useStore = create<State>((set, get) => ({
       expandedEventId: eventId,
       screen: 'progress',
     }),
+
+  /**
+   * Delete a single rehearsal from a talk: drop its record and purge its
+   * in-browser recording (IndexedDB). If the deleted rehearsal was the one
+   * Insights is showing, fall back to the most recent remaining rehearsal;
+   * if none remain, route Home. Downloaded files are untouched.
+   */
+  deleteRehearsal: (eventId, sessionId) => {
+    deleteRecording(sessionId).catch(() => {});
+    const { events, activeSession, insightsSessionId } = get();
+    const event = events.find((e) => e.id === eventId);
+    if (!event) return;
+    const remaining = event.sessions.filter((s) => s.id !== sessionId);
+    const next = updateEvent(events, eventId, (e) => ({ ...e, sessions: remaining }));
+    saveEvents(next);
+
+    const wasShown =
+      insightsSessionId === sessionId || activeSession?.id === sessionId;
+
+    if (remaining.length === 0) {
+      // Nothing left to show for this talk — go Home (expanding the talk).
+      set({
+        events: next,
+        ...(wasShown ? { activeSession: null, insightsSessionId: null } : {}),
+        expandedEventId: eventId,
+        screen: 'home',
+      });
+      return;
+    }
+
+    if (wasShown) {
+      // Sessions are stored newest-first; [0] is the most recent remaining.
+      const fallback = remaining[0];
+      set({
+        events: next,
+        activeSession: fallback,
+        insightsSessionId: fallback.id,
+      });
+      return;
+    }
+
+    set({ events: next });
+  },
 
   goHomeExpandingActiveEvent: () => {
     const { activeEventId } = get();

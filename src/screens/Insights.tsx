@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, selectActiveEvent } from '../state/store';
-import { AudiencePreview as Scene } from '../scene/AudiencePreview';
+import { AudiencePreview as Scene, type ScreenHead } from '../scene/AudiencePreview';
+import { pickEmoji } from '../scene/audienceAnimation';
+import { useDraggable } from '../lib/useDraggable';
+import type { EmojiReaction } from '../lib/useAudienceEngagement';
 import { MockVideoFrame } from '../components/MockVideoFrame';
 import { LiveStatChip } from '../components/LiveStatChip';
 import { TerminalFeed } from '../components/TerminalFeed';
 import { sampleTimeline } from '../scene/ReplayController';
 import { ScreenTitle } from '../components/ScreenTitle';
+import { Aura } from '../components/Aura';
+import { CloseButton } from '../components/CloseButton';
 import { mmss } from '../lib/format';
 import { buildInsightCards } from '../lib/takeaways';
 import type { InsightCard } from '../lib/takeaways';
@@ -37,12 +42,8 @@ export function Insights() {
   const recordingUrlRef = useRef<string | null>(null);
   recordingUrlRef.current = recordingUrl;
   // True once we've finished checking IndexedDB for this rehearsal's recording.
-  // Gates the "Demo video" label so it doesn't flash before the lookup resolves.
   const [recordingChecked, setRecordingChecked] = useState(false);
   const videoSrc = recordingUrl ?? VIDEO_SRC;
-  // We're showing the demo fallback (not a real recording) once the lookup is
-  // done and produced nothing playable — skipped, deleted, old, or corrupt.
-  const usingFallback = recordingChecked && !recordingUrl;
   // One-time "your recording is saved" notice, shown the first time Insights
   // ever loads with a real recording. `noticeClosing` drives the soft exit.
   const [showStorageNotice, setShowStorageNotice] = useState(false);
@@ -224,6 +225,42 @@ export function Insights() {
     };
   }, [isPlaying, videoOk, session?.id]);
 
+  // REPLAY emoji — the marker timeline drives positive reactions too: when the
+  // playhead crosses a strongMoment marker, float an earned emoji off a visible
+  // avatar's head (projected via the same head-projection used live).
+  // The whole right-side panel (audience + stat cards + insights) moves as ONE
+  // unit, dragged by the top grip strip.
+  const railDrag = useDraggable();
+  const projection = useRef<ScreenHead[] | null>(null);
+  const [replayEmojis, setReplayEmojis] = useState<EmojiReaction[]>([]);
+  const emojiIdRef = useRef(0);
+  const lastPhRef = useRef(0);
+  useEffect(() => {
+    const prev = lastPhRef.current;
+    lastPhRef.current = sessionPlayhead;
+    if (!session || sessionPlayhead <= prev) return;
+    const crossed = session.markers.some(
+      (m) => m.kind === 'strongMoment' && m.t > prev && m.t <= sessionPlayhead,
+    );
+    if (!crossed) return;
+    const heads = (projection.current ?? []).filter((h) => h.visible);
+    const at = heads.length
+      ? heads[Math.floor(Math.random() * heads.length)]
+      : { x: 0.5, y: 0.4 };
+    const id = emojiIdRef.current++;
+    const e: EmojiReaction = {
+      id,
+      char: pickEmoji(false),
+      x: at.x,
+      y: Math.max(0.04, at.y - 0.04),
+    };
+    setReplayEmojis((l) => [...l, e]);
+    window.setTimeout(
+      () => setReplayEmojis((l) => l.filter((x) => x.id !== id)),
+      1800,
+    );
+  }, [sessionPlayhead, session]);
+
   if (!session) return null;
 
   const sample = sampleTimeline(session.timeline, sessionPlayhead);
@@ -315,8 +352,9 @@ export function Insights() {
   const transportLabel = isPlaying ? 'Pause' : ended ? 'Replay' : 'Play';
 
   return (
-    <div className="insights-screen">
+    <div className="insights-screen settle-in">
       <div className="insights-screen__video">
+        <Aura className="aura--purple-pink aura--insights" />
         {videoOk ? (
           <video
             ref={videoRef}
@@ -332,30 +370,9 @@ export function Insights() {
           <MockVideoFrame t={sessionPlayhead} warmth={session.audience.warmth} />
         )}
 
-        <div className="insights-screen__top">
-          <button className="btn btn--quiet" onClick={goHome}>← Back</button>
-        </div>
-        <ScreenTitle>Insights</ScreenTitle>
-        {/* Quiet header line, top-left under the back button. Sessions are
-            stored newest-first so attempt# = total - index. */}
-        {event && (() => {
-          const idx = event.sessions.findIndex((s) => s.id === session.id);
-          const attempt =
-            idx >= 0 ? event.sessions.length - idx : event.sessions.length;
-          return (
-            <div className="header-line">
-              <span className="header-line__name">{event.name}</span>
-              <span className="header-line__dim"> · rehearsal {attempt}</span>
-            </div>
-          );
-        })()}
-
-        {/* Fallback label — only when there's no real recording to play. */}
-        {usingFallback && (
-          <div className="demo-tag">
-            Demo video — no recording for this rehearsal
-          </div>
-        )}
+        <CloseButton onClick={goHome} />
+        {/* Shared glass-pill title (Progress etalon); no subtitle. */}
+        <ScreenTitle>{event ? `Insights · ${event.name}` : 'Insights'}</ScreenTitle>
 
         {/* Center play button — only while paused/ended */}
         {!isPlaying && (
@@ -368,22 +385,31 @@ export function Insights() {
               {ended ? (
                 <path
                   d="M20 12a8 8 0 1 1 -2.343 -5.657l2.343 2.343M14 8h6V2"
-                  stroke="#1f2230"
+                  stroke="#1F1A2E"
                   strokeWidth={2}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               ) : (
-                <path d="M8 5 L19 12 L8 19 Z" fill="#1f2230" />
+                <path d="M8 5 L19 12 L8 19 Z" fill="#1F1A2E" />
               )}
             </svg>
           </button>
         )}
 
-        {/* Right rail — audience preview locked, stats locked, scrollable feed */}
-        <aside className="rail">
-          <div className="rail__panel rail__panel--audience">
+        {/* Right rail — moves as ONE unit; the top grip strip is the drag handle. */}
+        <aside className="rail" ref={railDrag.ref} style={railDrag.style}>
+          <div
+            className={`rail__grip rail__drag-handle${railDrag.dragging ? ' is-dragging' : ''}`}
+            {...railDrag.handleProps}
+            aria-label="Move panel"
+            role="button"
+          />
+          <div
+            className={`rail__panel rail__panel--audience rail__drag-handle${railDrag.dragging ? ' is-dragging' : ''}`}
+            {...railDrag.handleProps}
+          >
             <div className="rail__label">AUDIENCE</div>
             <div className="rail__audience-scene">
               <Scene
@@ -394,7 +420,21 @@ export function Insights() {
                 cameraMode="firstPerson"
                 markers={session.markers}
                 playheadSec={sessionPlayhead}
+                projection={projection}
               />
+              {replayEmojis.length > 0 && (
+                <div className="reaction-layer" aria-hidden>
+                  {replayEmojis.map((e) => (
+                    <span
+                      key={e.id}
+                      className="reaction-emoji"
+                      style={{ left: `${e.x * 100}%`, top: `${e.y * 100}%` }}
+                    >
+                      {e.char}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -493,6 +533,13 @@ export function Insights() {
           max={durationForScrubber || 0.1}
           step={0.05}
           value={Math.min(currentTime, durationForScrubber || 0)}
+          style={{
+            '--fill': `${
+              durationForScrubber > 0
+                ? (Math.min(currentTime, durationForScrubber) / durationForScrubber) * 100
+                : 0
+            }%`,
+          } as React.CSSProperties}
           onChange={(e) => onScrub(Number(e.target.value))}
         />
         <span className="timecode timecode--inline">

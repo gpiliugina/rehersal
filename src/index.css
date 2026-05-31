@@ -1,29 +1,41 @@
 :root {
-  /* Soft, premium wellness palette */
-  --bg: #f4f1ec;
-  --bg-2: #ece7df;
-  --ink: #1f2230;
-  --ink-2: #4a4f60;
-  --ink-3: #8a8f9c;
-  --line: #d9d3c8;
-  --accent: #7a8a6a;       /* sage */
-  --accent-2: #c79c75;     /* warm clay */
-  --danger: #b66565;
-  --ok: #5e8a6a;
-  --card: #fbf8f3;
-  --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 32px rgba(50,40,30,0.06);
-  --radius: 14px;
-  --radius-sm: 8px;
+  /* Calm-dawn palette — light beige cream, deep blackish-purple, with warm
+     aura gradients (purple → pink → orange) used as atmospheric blooms.
+     The old variable names are kept (mapped onto the new tones) so every
+     screen inherits the change from this single source of truth. */
+  /* Legacy variable names kept as the app's vocabulary, now REMAPPED onto the
+     semantic tokens in styles/tokens.css (the single source of truth). */
+  --bg: var(--color-bg);
+  --bg-2: var(--color-bg-sunken);
+  --ink: var(--color-ink-deep);
+  --ink-2: var(--color-ink-muted);
+  --ink-3: var(--color-ink-faint);
+  --line: var(--color-line);
+  --accent: var(--color-sage);   /* "positive" */
+  --accent-2: var(--color-copper); /* "issue" */
+  --danger: var(--color-copper); /* no red — danger folds into burnt copper */
+  --ok: var(--color-sage);
+  --card: var(--color-surface);
+
+  /* Warm accent gradient — used as auras, blooms, and gradient strokes. */
+  --aura-purple: var(--color-aura-purple);
+  --aura-pink: var(--color-aura-pink);
+  --aura-orange: var(--color-aura-peach);
+  --warm-gradient: var(--gradient-warm);
+
+  --shadow: var(--shadow-soft);
+  --radius: var(--radius-input);
+  --radius-sm: var(--radius-2xs);
   /* Frosted-glass — the single, shared treatment behind any UI that floats
      over the 3D scene or video (titles, bottom bars/pills, the Insights rail).
      visionOS-style deep cool-neutral glass: same values everywhere so the
      design reads coherently over both light and dark scenes. Translucent dark
      fill, a 24px blur, a 0.5px inner-highlight border, white text, and a very
      soft drop shadow. */
-  --scrim-bg: rgba(28, 28, 30, 0.55);
-  --scrim-border: rgba(255, 255, 255, 0.12);
+  --scrim-bg: rgba(31, 26, 46, 0.55);
+  --scrim-border: rgba(255, 255, 255, 0.14);
   --scrim-blur: blur(24px);
-  --scrim-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --scrim-shadow: 0 8px 24px rgba(31, 26, 46, 0.15);
   /* Text on glass: solid white, with dimmed/faint steps for labels + meta. */
   --glass-ink: #ffffff;
   --glass-ink-dim: rgba(255, 255, 255, 0.64);
@@ -31,8 +43,12 @@
   /* Single source of truth for the y-offset of every <ScreenTitle> in the
      app. Change here = changes every screen at once. */
   --screen-title-top: 56px;
-  font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Inter",
-    system-ui, sans-serif;
+
+  /* Type system: Anek Telugu for titles (rendered in CAPS), Inter for body. */
+  --font-title: 'Anek Telugu', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  font-family: var(--font-body);
   color: var(--ink);
 }
 
@@ -89,22 +105,69 @@ p  { color: var(--ink-2); margin: 0; }
 
 .btn {
   appearance: none;
-  border: 1px solid transparent;
+  border: none;
+  outline: none;
   background: var(--ink);
   color: var(--bg);
   padding: 12px 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font: inherit;
   font-weight: 500;
   cursor: pointer;
-  transition: transform 0.08s ease, opacity 0.2s ease, background 0.2s;
+  /* Solid deep-purple base, no gradient inside. The peach shimmer (below) is
+     an overlay only; the base just warms a hair on hover. */
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease-out, opacity 0.2s ease,
+    background-color 0.2s ease-out;
 }
-.btn:hover { opacity: 0.9; }
-.btn:active { transform: translateY(1px); }
+/* INK WIPE — primary solid pills fill peach→pink left→right on hover; on press
+   the fill swells vertically. The button itself never moves or scales. Ghost /
+   quiet / destructive opt out. (Shared with .ecard__rehearse, .setup-panel__start.) */
+.btn:not(.btn--ghost):not(.btn--quiet):not(.btn--destructive) { z-index: 0; }
+.btn:not(.btn--ghost):not(.btn--quiet):not(.btn--destructive)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--color-aura-peach) 0%, var(--color-aura-pink) 100%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 380ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+.btn:not(.btn--ghost):not(.btn--quiet):not(.btn--destructive):not([disabled]):hover::after,
+.btn:not(.btn--ghost):not(.btn--quiet):not(.btn--destructive):not([disabled]):focus-visible::after {
+  transform: scaleX(1);
+}
+.btn:not(.btn--ghost):not(.btn--quiet):not(.btn--destructive):not([disabled]):active::after {
+  transform: scaleX(1) scaleY(1.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn::after { transition: none !important; }
+}
+/* Same ink wipe on the standalone primary pills. */
+.ecard__rehearse, .setup-panel__start { z-index: 0; overflow: hidden; }
+.ecard__rehearse::after, .setup-panel__start::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--color-aura-peach) 0%, var(--color-aura-pink) 100%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 380ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+.ecard__rehearse:hover::after, .setup-panel__start:hover::after { transform: scaleX(1); }
+.ecard__rehearse:active::after, .setup-panel__start:active::after { transform: scaleX(1) scaleY(1.1); }
+/* Secondary / ghost — outlined in the primary's FILL colour (ink-deep), no fill. */
 .btn--ghost {
   background: transparent;
-  color: var(--ink);
-  border-color: var(--line);
+  color: var(--color-ink-deep);
+  border: 1px solid var(--color-ink-deep);
 }
 .btn--quiet {
   background: transparent;
@@ -113,6 +176,11 @@ p  { color: var(--ink-2); margin: 0; }
   padding: 8px 12px;
 }
 .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+/* Keyboard a11y without strokes: focus-visible lifts the fill, no ring/outline.
+   (Primary already cues focus via the ink-wipe fill — rule above.) */
+.btn:focus-visible { outline: none; }
+.btn--ghost:focus-visible,
+.btn--quiet:focus-visible { background: rgba(31, 26, 46, 0.06); }
 
 textarea, input[type="text"], input[type="number"] {
   width: 100%;
@@ -124,19 +192,83 @@ textarea, input[type="text"], input[type="number"] {
   color: var(--ink);
   resize: vertical;
 }
-textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-
+/* No focus ring / stroke on any input or textarea, app-wide (incl. sliders and
+   keyboard :focus-visible, which is what paints the native range focus ring). */
+textarea:focus, input:focus, textarea:active, input:active,
+textarea:focus-visible, input:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
 label.field { display: flex; flex-direction: column; gap: 6px; }
 label.field > span { font-size: 13px; color: var(--ink-3); }
 
+/* Custom flat slider — no native chrome, no track border, no thumb ring/stroke.
+   Two-tone track — played portion ink-deep, remaining ink-faint; ink-deep thumb.
+   Webkit reads the --fill gradient (set inline per slider); Firefox uses
+   ::-moz-range-progress / ::-moz-range-track below. No strokes anywhere. */
 input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border: none;
+  outline: none;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--color-ink-deep) var(--fill, 0%),
+    var(--color-ink-faint) var(--fill, 0%)
+  );
+  cursor: pointer;
+}
+input[type="range"]:focus,
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-ink-deep);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-ink-deep);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-ink-faint);
+}
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-ink-deep);
 }
 
 .kbd { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
 
 .muted { color: var(--ink-3); }
+
+/* ONE shared label/eyebrow style for every small uppercase label in the app
+   (Insight #N, Pay attention, Calm, AUDIENCE, First talk, DEMO VIDEO, …).
+   Just text — no background, border, padding box, or pill. */
+.label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
 .tag {
   display: inline-flex;
   align-items: center;
@@ -355,8 +487,8 @@ input[type="range"] {
 .carousel-nav--right { right: 24px; }
 .carousel-nav.is-disabled { display: none; }
 .carousel-nav:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  background: rgba(31, 26, 46, 0.08);
   opacity: 1;
 }
 
@@ -388,12 +520,12 @@ input[type="range"] {
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 }
 .newtalk-card:hover {
-  background: rgba(31, 34, 48, 0.04);
+  background: rgba(31, 26, 46, 0.04);
   border-color: var(--ink-3);
 }
 .newtalk-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  background: rgba(31, 26, 46, 0.08);
 }
 .newtalk-card__inner {
   display: flex;
@@ -476,8 +608,8 @@ input[type="range"] {
   font-weight: 500;
   letter-spacing: -0.005em;
   color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--accent);
+  background: rgba(31, 26, 46, 0.06);
+  border: none;
   border-radius: 6px;
   padding: 2px 8px;
   outline: none;
@@ -505,12 +637,12 @@ input[type="range"] {
 .kebab-btn:hover,
 .kebab-btn[aria-expanded="true"] {
   opacity: 1 !important;
-  background: rgba(31, 34, 48, 0.06);
+  background: rgba(31, 26, 46, 0.06);
   color: var(--ink);
 }
 .kebab-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  background: rgba(31, 26, 46, 0.08);
   opacity: 1;
 }
 .kebab-popover {
@@ -518,19 +650,28 @@ input[type="range"] {
   top: 100%;
   right: 0;
   margin-top: 6px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(50,40,30,0.18);
-  min-width: 168px;
-  padding: 4px;
+  transform-origin: top right;
+  background: var(--color-surface);
+  border: none;
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  min-width: 160px;
+  padding: 6px;
   z-index: 20;
-  animation: kebabIn 0.12s ease-out;
+  animation: kebabIn 180ms var(--ease-pop) both;
+}
+.kebab-popover.is-closing {
+  animation: kebabOut 140ms var(--ease-pop) both;
 }
 @keyframes kebabIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
 }
+@keyframes kebabOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.94); }
+}
+/* Both items: identical single-ink style — no destructive red, no icons. */
 .kebab-popover button {
   appearance: none;
   display: block;
@@ -538,22 +679,17 @@ input[type="range"] {
   text-align: left;
   background: transparent;
   border: none;
-  padding: 8px 12px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
+  padding: 10px 14px;
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink-deep);
   cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.12s ease;
+  border-radius: 10px;
+  transition: background var(--dur-instant) ease;
 }
 .kebab-popover button:hover {
-  background: var(--bg-2);
-}
-.kebab-popover button.is-destructive {
-  color: var(--accent-2);
-}
-.kebab-popover button.is-destructive:hover {
-  background: rgba(199, 156, 117, 0.14);
+  background: rgba(31, 26, 46, 0.05);
 }
 .talk-card__sub { font-size: 12.5px; }
 .talk-card__setup {
@@ -688,7 +824,7 @@ input[type="range"] {
 }
 .event-row-card.is-open {
   box-shadow: var(--shadow);
-  border-color: #cfc8b9;
+  border-color: #D8CDB9;
 }
 .event-row-line {
   display: flex;
@@ -810,13 +946,28 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Every modal/plaque centres its text + button row consistently. */
+  text-align: center;
   animation: modalIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+/* ONE shared modal title — Anek Telugu medium, 28px, ink-deep, centred.
+   Every modal/plaque uses this; none sets its own type scale. */
+.modal-title {
+  font-family: var(--font-title);
+  font-weight: 500;
+  font-size: var(--text-3xl); /* 28px */
+  line-height: 1.15;
+  color: var(--color-ink-deep);
+  text-transform: none;
+  text-align: center;
+}
+.modal-card__cta { align-self: center; }           /* natural width, centred */
+.modal-card input { text-align: center; }           /* matches the centred title */
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.modal-card__close {
+.modal-close {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -830,44 +981,66 @@ input[type="range"] {
   border-radius: 50%;
   transition: background 0.15s, color 0.15s;
 }
-.modal-card__close:hover {
+.modal-close:hover {
   background: var(--bg-2);
   color: var(--ink);
 }
-.modal-card__title {
-  /* Inherits .screen-title typography; modal just adds padding-right so the
-     title doesn't crash into the absolute-positioned close button. */
-  padding-right: 28px;
-}
-.modal-card__sub { font-size: 14px; margin-top: -4px; }
-.modal-card input[type="text"] {
-  font-size: 18px;
-  padding: 14px 16px;
-  margin-top: 4px;
-}
-.modal-card__cta {
-  margin-top: 4px;
-  align-self: stretch;
-  transition: opacity 0.2s, background 0.2s;
-}
-.modal-card__cta.is-muted {
-  opacity: 0.45;
-}
 
-/* Confirmation dialog variant — title + optional sub + actions row */
-.modal-card--confirm {
-  width: min(420px, 100%);
-  padding: 24px 24px 20px;
-  gap: 8px;
-}
-.modal-card--confirm .modal-card__title { font-size: 19px; }
-.modal-card--confirm .modal-card__sub { font-size: 14px; }
-.modal-card__actions {
+/* Card layer floats above the +New glow wash (55) so the plaque is in front of
+   it, while the dim backdrop (50) stays behind it. Every modal uses this. */
+.modal-cardlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.modal-cardlayer .modal-card { pointer-events: auto; }
+/* Body copy — muted, centred paragraph under the title. */
+.modal-body { font-size: 14px; margin-top: -4px; color: var(--ink-2); }
+
+/* Quiet input — no border, no ring, no outline in any state. Focus only
+   deepens the fill. Centred to match the title. */
+.modal-input {
+  width: 100%;
+  margin-top: 4px;
+  font-family: var(--font-body);
+  font-size: 18px;
+  color: var(--color-ink-deep);
+  text-align: center;
+  padding: 14px 16px;
+  border: none;
+  outline: none;
+  border-radius: var(--radius-md);
+  background: rgba(31, 26, 46, 0.04);
+  transition: background var(--dur-fast) ease;
+}
+.modal-input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+  background: rgba(31, 26, 46, 0.07);
+}
+.modal-input::placeholder { color: var(--ink-3); }
+
+/* Action row — buttons centred as a group. */
+.modal-actions {
+  display: flex;
+  justify-content: center;
   gap: 10px;
   margin-top: 8px;
 }
+
+/* Single primary CTA (e.g. permission allow) — natural width, centred. */
+.modal-card__cta {
+  margin-top: 4px;
+  align-self: center;
+  transition: opacity 0.2s, background 0.2s;
+}
+.modal-card__cta.is-muted { opacity: 0.45; }
 
 /* Destructive pill — muted warm clay, not alarming red */
 .btn--destructive {
@@ -876,11 +1049,11 @@ input[type="range"] {
   border-color: transparent;
 }
 .btn--destructive:hover {
-  background: #b88a64;
+  background: #B36A33;
   opacity: 1;
 }
 .btn--destructive:active {
-  background: #a07853;
+  background: #9C5A2A;
 }
 
 /* ----- Event detail --------------------------------------------------- */
@@ -924,32 +1097,64 @@ input[type="range"] {
    light and dark scenes. Font size matches the Home hero for consistent
    visual weight. */
 .screen-title {
+  /* Top-LEFT label — sentence case, Anek Telugu. Sits just below the app
+     wordmark (.app-logo at top:24/left:32), sharing its 32px left offset.
+     Identical anchor on every non-Home screen. The × close stays top-right. */
   position: absolute;
-  top: var(--screen-title-top);
-  left: 50%;
-  transform: translateX(-50%);
+  top: 56px;
+  left: 32px;
+  right: auto;
   margin: 0;
-  font-family: inherit;
+  font-family: var(--font-title);
+  text-transform: none;
   font-size: 38px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.01em;
-  color: var(--glass-ink);
-  text-align: center;
-  /* Leave room for corner controls (Back button, close X, etc.). */
-  max-width: min(820px, calc(100% - 160px));
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-align: left;
+  max-width: calc(100% - 64px);
   z-index: 5;
   pointer-events: auto;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-shadow: none;
-  padding: 10px 34px;
-  border-radius: 999px;
-  background: var(--scrim-bg);
-  border: 0.5px solid var(--scrim-border);
-  box-shadow: var(--scrim-shadow);
-  backdrop-filter: var(--scrim-blur);
-  -webkit-backdrop-filter: var(--scrim-blur);
 }
+/* Dark in-session screens → white title for contrast over the video/scene. */
+.insights-screen .screen-title {
+  color: var(--color-ink-deep);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+}
+/* Rehearsing's title sits over the dark room scene → white. */
+.rehearsing .screen-title { color: #fff; }
+
+/* Top-right close (×) — mirrors the top-left title. Identical fixed offset on
+   the four screens that use it (Pick a room, Set audience, Progress, Insights).
+   Deep-purple ink by default; white over the dark Insights video. */
+.screen-close {
+  position: absolute;
+  top: 24px;
+  right: 32px;
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.screen-close:hover { background: rgba(31, 26, 46, 0.08); }
+.screen-close:active { transform: scale(0.94); }
+.screen-close:focus-visible { outline: none; background: rgba(31, 26, 46, 0.08); }
+.insights-screen .screen-close { color: #fff; }
+.insights-screen .screen-close:hover { background: rgba(255, 255, 255, 0.14); }
 /* Home keeps its title as the plain page hero — no pill, dark ink on cream. */
 .screen-title--hero {
   color: var(--ink);
@@ -959,6 +1164,9 @@ input[type="range"] {
   padding: 0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  /* Lighter weight + tighter tracking because the hero is very large. */
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 /* The modals (Name-talk, camera permission) embed the title inside a centered
    card, not at the viewport top — drop the floating pill + positioning and
@@ -976,6 +1184,10 @@ input[type="range"] {
   padding: 0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  /* Modal titles are body copy, not screen titles — keep Inter, sentence case. */
+  font-family: var(--font-body);
+  text-transform: none;
+  letter-spacing: -0.01em;
 }
 
 .scene-screen__edge-nav {
@@ -1058,7 +1270,7 @@ input[type="range"] {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 4px;
-  background: rgba(31, 34, 48, 0.05);
+  background: rgba(31, 26, 46, 0.05);
   border-radius: 999px;
   padding: 4px;
 }
@@ -1104,13 +1316,127 @@ input[type="range"] {
   transition: left 0.18s ease;
   font-variant-numeric: tabular-nums;
 }
-.seg-slider__input { width: 100%; accent-color: var(--accent); }
+.seg-slider__input { width: 100%; accent-color: var(--color-ink-deep); }
 .seg-slider__ends {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
   letter-spacing: 0.02em;
 }
+
+/* =============================================================
+   SETUP — full-bleed live audience preview + a single frosted control panel
+   on the right holding all four questions. Smart-defaulted; commits live.
+   ============================================================= */
+.setup-screen {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--color-bg-sunken);
+}
+/* The 3D audience preview fills the whole screen as the background. */
+.setup__scene { position: absolute; inset: 0; z-index: 0; }
+
+/* Setup page title now uses the shared <ScreenTitle> glass pill (see .screen-title). */
+
+/* Right-side frosted control panel — vertically centred, 32px from the edge. */
+.setup-panel {
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 360px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 0.5px solid rgba(255, 255, 255, 0.7);
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(31, 26, 46, 0.14);
+}
+.setup-q { display: flex; flex-direction: column; gap: var(--space-2); }
+.setup-q__label {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(31, 26, 46, 0.55);
+}
+/* chip-to-chip = --space-2 (8px); wrapped row-to-row = --space-3 (12px) */
+.setup-pills { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-2); }
+.pill {
+  appearance: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  background: transparent; /* unselected = no fill */
+  color: var(--color-ink-deep);
+  transition: background 220ms ease;
+}
+.pill:hover:not(.is-selected) { background: rgba(31, 26, 46, 0.04); }
+/* Selected = the subtle ink fill (no border, no shadow). */
+/* Selection changes ONLY the background — never the weight/size, so the chip's
+   footprint is identical in both states and the rows stay aligned. */
+.pill.is-selected {
+  background: rgba(31, 26, 46, 0.06);
+  color: var(--color-ink-deep);
+}
+
+.setup-size { display: flex; align-items: center; gap: 12px; }
+/* Audience-size slider — flat custom style + no strokes from base input[type=range]. */
+input.setup-size__slider {
+  flex: 1;
+  min-width: 0;
+}
+.setup-size__value {
+  flex: none;
+  min-width: 72px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.setup-panel__divider { height: 1px; background: rgba(31, 26, 46, 0.12); margin: 2px 0; }
+
+/* Wrap hosts the click ripple behind the (fixed) button. */
+.setup-panel__start-wrap {
+  position: relative;
+  --ripple-size: 56px;
+  --glow-size: 72px;
+}
+.setup-panel__start {
+  position: relative;
+  z-index: 1;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 22px rgba(31, 26, 46, 0.22);
+  transition: background 0.15s ease;
+}
+.setup-panel__start:hover { background: var(--ink); }
+.setup-panel__start:active { transform: translateY(0); }
 
 /* legacy plaque + room-gallery styles — superseded by .scene-screen +
    .scene-pill above, kept off so nothing accidentally renders. */
@@ -1370,11 +1696,43 @@ input[type="range"] {
 }
 
 /* ----- Start gate (user-initiated, replaces countdown) --------------- */
+/* The most important blur-to-focus moment in the app: the unclear room
+   becomes the rehearsal. ~800ms ease-out from blur(20px) → sharp on Start. */
 .rehearsing__scene {
-  transition: filter 0.55s ease;
+  transition: filter 0.8s ease-out;
 }
 .rehearsing__scene.is-blurred {
   filter: blur(20px) brightness(0.82) saturate(0.85);
+}
+
+/* Live emoji reactions — sparse, soft sprites that float up from the crowd and
+   fade out. Driven by the speaker's real voice (engagement peaks). Sits ABOVE
+   the audience canvas. */
+.reaction-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+}
+.reaction-emoji {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0;
+  filter: drop-shadow(0 2px 6px rgba(31, 26, 46, 0.25));
+  will-change: transform, opacity;
+  animation: reactionFloat 1.8s ease-out forwards;
+}
+@keyframes reactionFloat {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  18% { opacity: 0.72; transform: translate(-50%, -54%) scale(1); }
+  70% { opacity: 0.55; }
+  100% { opacity: 0; transform: translate(-50%, calc(-50% - 40px)) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction-emoji { animation-duration: 1.2s; }
 }
 .start-gate {
   position: absolute;
@@ -1387,12 +1745,35 @@ input[type="range"] {
   z-index: 4;
   background: rgba(20, 20, 28, 0.04);
   animation: gateIn 0.5s ease-out;
+  /* On Start, the gate (button + sub) fades out as the room comes to focus. */
+  transition: opacity 0.45s ease-out;
+}
+.start-gate.is-leaving {
+  opacity: 0;
+  pointer-events: none;
 }
 @keyframes gateIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* Signal indicators (the bottom control pill) fade in as the room focuses. */
+.rehearsing__center-bottom { animation: signalsIn 0.8s ease-out; }
+.rec-indicator { animation: signalsIn 0.8s ease-out; }
+@keyframes signalsIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Wrap hosts the click ripple behind the (fixed) circular button. */
+.start-gate__cta-wrap {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  --ripple-size: 110px;
+  --glow-size: 124px;
+}
 .start-gate__cta {
+  position: relative;
+  z-index: 1;
   appearance: none;
   width: 110px;
   height: 110px;
@@ -1418,7 +1799,7 @@ input[type="range"] {
     0 18px 48px rgba(20, 20, 28, 0.32),
     0 0 0 1px rgba(255, 255, 255, 0.8) inset;
 }
-.start-gate__cta:active { transform: scale(0.98); }
+/* No press-scale — the ripple is the click feedback; the button stays put. */
 .start-gate__sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.9);
@@ -1426,6 +1807,14 @@ input[type="range"] {
   letter-spacing: 0.01em;
   margin: 0;
 }
+/* Skip = secondary action; outlined ghost, tinted light so it reads over the
+   scene behind the gate (same legibility treatment as the gate's white text). */
+.start-gate__skip {
+  margin-top: 14px;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+.start-gate__skip:hover { background: rgba(255, 255, 255, 0.14); }
 
 /* ----- Attention meter ----------------------------------------------- */
 .meter { display: flex; flex-direction: column; gap: 4px; flex: 1; }
@@ -1501,10 +1890,12 @@ input[type="range"] {
   gap: 8px;
 }
 .livechip__label {
+  font-family: var(--font-body);
   font-size: 10px;
-  letter-spacing: 0.07em;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--color-ink-muted);
 }
 .livechip__trend {
   font-size: 12px;
@@ -1512,9 +1903,17 @@ input[type="range"] {
   padding: 1px 5px;
   border-radius: 999px;
 }
-.livechip__trend.is-up { color: var(--ok); background: rgba(94, 138, 106, 0.16); }
-.livechip__trend.is-down { color: var(--accent-2); background: rgba(199, 156, 117, 0.18); }
-.livechip__trend.is-steady { color: var(--ink-3); background: rgba(31, 34, 48, 0.06); }
+/* Improving trend → the arrow glyph itself carries a tiny warm gradient
+   (purple → orange) via background-clip, no pill behind it. */
+.livechip__trend.is-up {
+  background: var(--warm-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 600;
+}
+.livechip__trend.is-down { color: var(--color-aura-pink); background: rgba(232, 154, 171, 0.18); }
+.livechip__trend.is-steady { color: var(--ink-3); background: rgba(31, 26, 46, 0.06); }
 .livechip__value {
   font-size: 22px;
   font-weight: 500;
@@ -1589,7 +1988,7 @@ input[type="range"] {
 }
 .moment-card--attention { border-left: 4px solid var(--accent-2); }
 .moment-card--attention .moment-card__icon {
-  background: rgba(199, 156, 117, 0.18);
+  background: rgba(199, 122, 63, 0.18);
   color: #8a6242;
 }
 .moment-card__body { display: flex; flex-direction: column; gap: 2px; }
@@ -1609,12 +2008,13 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: var(--scrim-bg);
-  border-top: 1px solid var(--scrim-border);
+  /* Solid light surface — its own bar over the video, no dark fill / glass.
+     No top stroke; a soft upward shadow lifts it off the video instead. */
+  background: var(--color-surface);
+  border-top: none;
+  box-shadow: 0 -2px 10px rgba(31, 26, 46, 0.08);
   padding: 12px 20px;
   min-height: 60px;
-  backdrop-filter: var(--scrim-blur);
-  -webkit-backdrop-filter: var(--scrim-blur);
 }
 .scrub-input {
   flex: 1;
@@ -1650,16 +2050,16 @@ input[type="range"] {
 .btn-icon:hover { background: rgba(0,0,0,0.05); }
 .btn-icon:active { background: rgba(0,0,0,0.08); }
 .btn-icon:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  background: rgba(31, 26, 46, 0.08);
 }
 /* End / Stop variant — dark fill so it reads as terminal. */
 .btn-icon--end {
   background: var(--ink);
   color: var(--bg);
 }
-.btn-icon--end:hover { background: #2b2e3c; }
-.btn-icon--end:active { background: #161823; }
+.btn-icon--end:hover { background: #312a45; }
+.btn-icon--end:active { background: #14101f; }
 .insights-screen__cta-group {
   display: flex;
   gap: 8px;
@@ -1702,13 +2102,12 @@ input[type="range"] {
 /* ----- Quiet header line (top-left) --------------------------------- */
 .header-line {
   position: absolute;
-  top: 70px;
-  left: 24px;
+  top: 108px;
+  left: 32px;
   z-index: 3;
   font-size: 13px;
   letter-spacing: 0.005em;
-  color: rgba(255,255,255,0.92);
-  text-shadow: 0 1px 2px rgba(0,0,0,0.55), 0 0 8px rgba(0,0,0,0.4);
+  color: rgba(255, 255, 255, 0.92);
 }
 .header-line__name { color: rgba(255,255,255,0.95); font-weight: 500; }
 .header-line__dim { color: rgba(255,255,255,0.6); font-weight: 400; }
@@ -1765,22 +2164,50 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
 }
+/* Unified eyebrow — same as .label (font-body, semibold, uppercase, ink-muted). */
 .rail__label {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-body);
   font-size: 10px;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.12em;
-  color: var(--ink-3);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
   padding: 8px 12px 4px;
 }
+/* Drag handle — a top grip strip moves the WHOLE rail as one unit (see
+   useDraggable). Only adds movability; the locked panel styling is untouched. */
+.rail { will-change: transform; }
+/* Bare top strip — the drag handle (no icon). Full width, comfortable hit area;
+   cursor: grab signals it's movable. */
+.rail__grip {
+  height: 22px;
+  margin-bottom: -4px;
+}
+.rail__drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.rail__drag-handle.is-dragging {
+  cursor: grabbing;
+}
+
 .rail__panel--audience { flex-shrink: 0; }
 .rail__audience-scene {
-  /* 16:9, capped so the box ends up ~2/3 of its previous 4:3 height across
-     the rail's width range (clamp(300px, 30vw, 460px)). */
+  /* The preview IS the surface — fills its container (no cap, no centring). */
   position: relative;
   width: 100%;
-  max-width: 360px;
   aspect-ratio: 16 / 9;
-  margin: 0 auto;
+  border-radius: inherit;
+  overflow: hidden;
+}
+/* Static preview — let pointer events fall through to the panel so it can act as
+   a drag handle (the canvas would otherwise swallow pointerdown). */
+.rail__audience-scene canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none;
 }
 .rail__plaques {
   display: grid;
@@ -1815,11 +2242,11 @@ input[type="range"] {
   overflow-y: auto;
   padding: 0 4px 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(31, 34, 48, 0.2) transparent;
+  scrollbar-color: rgba(31, 26, 46, 0.2) transparent;
 }
 .rail__feed-scroll::-webkit-scrollbar { width: 6px; }
 .rail__feed-scroll::-webkit-scrollbar-thumb {
-  background: rgba(31, 34, 48, 0.18);
+  background: rgba(31, 26, 46, 0.18);
   border-radius: 999px;
 }
 
@@ -1835,7 +2262,7 @@ input[type="range"] {
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  border-bottom: 1px solid rgba(31, 34, 48, 0.08);
+  border-bottom: 1px solid rgba(31, 26, 46, 0.08);
   padding: 11px 12px 11px 13px;
   cursor: pointer;
   text-align: left;
@@ -1849,19 +2276,19 @@ input[type="range"] {
   transition: background 0.18s ease, border-color 0.18s ease, opacity 0.2s ease;
 }
 .insight-row:last-child { border-bottom: none; }
-.insight-row:hover { background: rgba(31, 34, 48, 0.04); }
+.insight-row:hover { background: rgba(31, 26, 46, 0.04); }
 .insight-row.is-past { opacity: 0.55; }
 .insight-row.is-active.is-past { opacity: 1; }
 .insight-row.is-active {
-  background: rgba(31, 34, 48, 0.06);
+  background: rgba(31, 26, 46, 0.06);
 }
 .insight-row--attention.is-active {
-  background: rgba(240, 159, 39, 0.10);
-  border-left-color: #f09f27;
+  background: rgba(232, 154, 171, 0.12);
+  border-left-color: var(--color-aura-pink);
 }
 .insight-row--positive.is-active {
-  background: rgba(150, 196, 89, 0.10);
-  border-left-color: #96c459;
+  background: rgba(124, 139, 92, 0.12);
+  border-left-color: #7C8B5C;
 }
 .insight-row__time {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -1880,7 +2307,7 @@ input[type="range"] {
 }
 .insight-row__arrow {
   font-size: 11px;
-  color: #96c459;
+  color: #7C8B5C;
   padding: 0 4px;
 }
 .insight-row__icon {
@@ -1890,8 +2317,9 @@ input[type="range"] {
   width: 18px;
   height: 18px;
 }
-.insight-row--attention .insight-row__icon { color: #f09f27; }
-.insight-row--positive  .insight-row__icon { color: #96c459; }
+/* Issue icons → pink at FULL opacity (the 0.50 token is reserved for fills). */
+.insight-row--attention .insight-row__icon { color: var(--color-aura-pink); }
+.insight-row--positive  .insight-row__icon { color: #7C8B5C; }
 .timecode {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 13px;
@@ -2019,8 +2447,8 @@ input[type="range"] {
   background: var(--bg);
   color: var(--ink);
   overflow: hidden;
-  /* top reserves space for the absolutely-positioned <ScreenTitle> */
-  padding: 124px 24px 20px;
+  /* top reserves space for the top-left <ScreenTitle> + verdict row */
+  padding: 80px 24px 20px;
 }
 
 /* Band 1 — hero (title lives in <ScreenTitle>; this row holds the verdict
@@ -2106,11 +2534,11 @@ input[type="range"] {
   gap: 4px;
   padding: 2px 0 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(31, 34, 48, 0.18) transparent;
+  scrollbar-color: rgba(31, 26, 46, 0.18) transparent;
 }
 .rehearsals-list__scroll::-webkit-scrollbar { width: 6px; }
 .rehearsals-list__scroll::-webkit-scrollbar-thumb {
-  background: rgba(31, 34, 48, 0.16);
+  background: rgba(31, 26, 46, 0.16);
   border-radius: 999px;
 }
 .rehearsal-row {
@@ -2127,9 +2555,22 @@ input[type="range"] {
   font: inherit;
   color: var(--ink-2);
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  /* Sharpness arc: the latest rehearsal (top) is fully sharp; older ones
+     down the stack get progressively softer + fainter, set per-row via the
+     --row-blur / --row-fade custom props. The journey coalescing into clarity. */
+  filter: blur(var(--row-blur, 0px));
+  opacity: var(--row-fade, 1);
+  transition: background 0.15s ease, color 0.15s ease,
+    filter 0.25s ease, opacity 0.25s ease;
 }
-.rehearsal-row:hover { background: var(--bg-2); color: var(--ink); }
+/* Hover or focus brings any card sharp again, temporarily. */
+.rehearsal-row:hover,
+.rehearsal-row:focus-visible {
+  background: var(--bg-2);
+  color: var(--ink);
+  filter: blur(0px);
+  opacity: 1;
+}
 .rehearsal-row__icon {
   display: inline-flex;
   align-items: center;
@@ -2198,45 +2639,35 @@ input[type="range"] {
 
 /* Inline-editable talk name — used inside the band-hero title */
 .progress-top__eyebrow-prefix { color: var(--ink-3); }
-.inline-edit__view {
-  appearance: none;
-  background: transparent;
-  border: none;
-  padding: 1px 6px 1px 4px;
-  margin-left: -2px;
-  font: inherit;
-  color: inherit;
-  cursor: text;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* Inline rename — edits the talk-name span IN PLACE (contentEditable). Same
+   element as the display name, so it inherits the title's Anek Telugu size,
+   weight, ink-deep colour and position. No stroke; only a caret + subtle fill
+   while editing (no padding, so glyphs never shift). */
+.talk-name {
+  outline: none;
+  caret-color: var(--color-ink-deep);
   border-radius: 6px;
-  transition: background 0.15s ease;
 }
-.inline-edit__view:hover {
-  background: rgba(31, 34, 48, 0.05);
+.talk-name[contenteditable='true'] {
+  background: rgba(31, 26, 46, 0.04);
 }
-.inline-edit__pencil {
-  opacity: 0;
+/* Pencil trigger — quiet ink-faint icon, revealed on title hover/focus. */
+.title-edit {
+  appearance: none;
+  background: none;
+  border: none;
+  outline: none;
+  margin-left: 6px;
+  padding: 2px;
   color: var(--ink-3);
+  cursor: pointer;
   display: inline-flex;
+  vertical-align: middle;
+  opacity: 0;
   transition: opacity 0.15s ease;
 }
-.inline-edit__view:hover .inline-edit__pencil,
-.inline-edit__view:focus-visible .inline-edit__pencil { opacity: 1; }
-.inline-edit__input {
-  font: inherit;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 1px 8px;
-  outline: none;
-  min-width: 220px;
-}
-.inline-edit__input:focus {
-  border-color: var(--accent);
-  background: var(--card);
-}
+.screen-title:hover .title-edit,
+.title-edit:focus-visible { opacity: 1; }
 
 /* Bottom action bar */
 .progress-actions {
@@ -2441,7 +2872,7 @@ input[type="range"] {
 }
 .bar__fill {
   width: 100%;
-  background: rgba(31, 34, 48, 0.14);
+  background: rgba(31, 26, 46, 0.14);
   border-radius: 999px; /* fat pill, both ends rounded */
   min-height: 14px;
 }
@@ -2476,10 +2907,10 @@ input[type="range"] {
 .room-track__bar {
   position: relative;
   height: 12px;
-  background: rgba(31, 34, 48, 0.06);
+  background: rgba(31, 26, 46, 0.06);
   border-radius: 999px;
 }
-.room-track.is-latest .room-track__bar { background: rgba(31, 34, 48, 0.10); }
+.room-track.is-latest .room-track__bar { background: rgba(31, 26, 46, 0.10); }
 .room-track__pip {
   position: absolute;
   top: 50%;
@@ -2576,7 +3007,7 @@ input[type="range"] {
   border-left: 3px solid transparent;
 }
 .fs-card--focus {
-  background: rgba(199, 156, 117, 0.12);
+  background: rgba(199, 122, 63, 0.12);
   border-left-color: var(--accent-2);
 }
 .fs-card--strength {
@@ -2618,11 +3049,11 @@ input[type="range"] {
   flex-direction: column;
   gap: 12px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(31, 34, 48, 0.2) transparent;
+  scrollbar-color: rgba(31, 26, 46, 0.2) transparent;
 }
 .video-pile__stack::-webkit-scrollbar { width: 6px; }
 .video-pile__stack::-webkit-scrollbar-thumb {
-  background: rgba(31, 34, 48, 0.18);
+  background: rgba(31, 26, 46, 0.18);
   border-radius: 999px;
 }
 .video-card {
@@ -2766,7 +3197,7 @@ input[type="range"] {
   background: var(--bg-2);
 }
 .metric-card__delta.is-up { color: var(--ok); background: rgba(94, 138, 106, 0.14); }
-.metric-card__delta.is-down { color: var(--accent-2); background: rgba(199, 156, 117, 0.16); }
+.metric-card__delta.is-down { color: var(--accent-2); background: rgba(199, 122, 63, 0.16); }
 .metric-card__row {
   display: flex;
   align-items: flex-end;
@@ -2834,7 +3265,7 @@ input[type="range"] {
   border-radius: 999px;
 }
 .mini-delta.is-up { color: var(--ok); background: rgba(94, 138, 106, 0.14); }
-.mini-delta.is-down { color: var(--accent-2); background: rgba(199, 156, 117, 0.16); }
+.mini-delta.is-down { color: var(--accent-2); background: rgba(199, 122, 63, 0.16); }
 .started-vs-now__best-chip {
   display: flex;
   flex-direction: column;
@@ -2910,8 +3341,8 @@ input[type="range"] {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #d2553f;
-  box-shadow: 0 0 0 0 rgba(210, 85, 63, 0.5);
+  background: #C77A3F;
+  box-shadow: 0 0 0 0 rgba(199, 122, 63, 0.5);
   animation: recPulse 1.6s ease-out infinite;
 }
 .rec-indicator__dot.is-paused {
@@ -2919,13 +3350,13 @@ input[type="range"] {
   animation: none;
 }
 @keyframes recPulse {
-  0% { box-shadow: 0 0 0 0 rgba(210, 85, 63, 0.45); }
-  70% { box-shadow: 0 0 0 7px rgba(210, 85, 63, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(210, 85, 63, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(199, 122, 63, 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(199, 122, 63, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(199, 122, 63, 0); }
 }
 
 /* Permission modal — "Skip this time" secondary link + busy warning line. */
-.modal-card__skip-link {
+.modal-skip-link {
   align-self: center;
   background: none;
   border: none;
@@ -2939,8 +3370,8 @@ input[type="range"] {
   margin-top: 2px;
   transition: color 0.15s ease;
 }
-.modal-card__skip-link:hover { color: var(--ink); }
-.modal-card__sub--warn { color: var(--accent-2); margin-top: 0; }
+.modal-skip-link:hover { color: var(--ink); }
+.modal-body--warn { color: var(--accent-2); margin-top: 0; }
 
 /* Inline "no recording this time" note under the Start gate. */
 .start-gate__note {
@@ -2977,16 +3408,15 @@ input[type="range"] {
    soft drop shadow. No per-screen overrides.
    ===================================================================== */
 
-/* Apply the spec's 0.5px border + soft shadow uniformly. */
+/* Apply the spec's 0.5px border + soft shadow uniformly (dark-glass chrome).
+   The Insights rail panels/livechips opt OUT — they're white liquid-glass now
+   (see the shared .liquid-card rule). */
 .scene-pill,
 .hud-pill,
-.rail__panel,
-.livechip,
 .rec-indicator {
   border-width: 0.5px;
   box-shadow: var(--scrim-shadow);
 }
-.insights-screen__controls { border-top-width: 0.5px; }
 
 /* ----- Room & Audience bottom pill ----- */
 .scene-pill { color: var(--glass-ink); }
@@ -3012,46 +3442,36 @@ input[type="range"] {
 .hud-pill .btn-icon--end { background: var(--glass-ink); color: var(--ink); }
 .hud-pill .btn-icon--end:hover { background: rgba(255, 255, 255, 0.86); }
 
-/* ----- Insights bottom playback bar ----- */
-.insights-screen__controls { color: var(--glass-ink); }
-.insights-screen__controls .btn-icon { color: var(--glass-ink); }
-.insights-screen__controls .btn-icon:hover { background: rgba(255, 255, 255, 0.14); }
-.insights-screen__controls .btn-icon:active { background: rgba(255, 255, 255, 0.22); }
-.insights-screen__controls .timecode--inline { color: var(--glass-ink-dim); }
-.insights-screen__controls .btn--ghost {
-  color: var(--glass-ink);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-.insights-screen__controls .btn--ghost:hover { background: rgba(255, 255, 255, 0.1); }
+/* ----- Insights bottom playback bar — solid light surface → ink controls --- */
+.insights-screen__controls { color: var(--color-ink-deep); }
+.insights-screen__controls .btn-icon { color: var(--color-ink-deep); }
+.insights-screen__controls .btn-icon:hover { background: rgba(31, 26, 46, 0.08); }
+.insights-screen__controls .btn-icon:active { background: rgba(31, 26, 46, 0.14); }
+.insights-screen__controls .timecode--inline { color: var(--color-ink-muted); }
+/* "See progress" stays the standard secondary (ink-deep stroke + text — global
+   .btn--ghost); "Rehearse again" is the ink-deep primary pill. */
+.insights-screen__controls .btn--ghost:hover { background: rgba(31, 26, 46, 0.06); }
 
-/* ----- Insights right rail ----- */
-.rail__panel { color: var(--glass-ink); }
-.rail__label { color: var(--glass-ink-dim); }
-.rail__plaques .livechip { border-width: 0.5px; box-shadow: var(--scrim-shadow); }
-.livechip { color: var(--glass-ink); }
-.livechip__label { color: var(--glass-ink-dim); }
-.livechip__value { color: var(--glass-ink); }
-.livechip__spark { color: var(--glass-ink-faint); }
-.rail__feed-scroll { scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
-.rail__feed-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.24); }
-.insight-row { color: var(--glass-ink); border-bottom-color: rgba(255, 255, 255, 0.1); }
-.insight-row:hover { background: rgba(255, 255, 255, 0.07); }
-/* Neutral active tint only for rows without a polarity colour — the
-   attention/positive active states keep their amber/green tints. */
-.insight-row.is-active:not(.insight-row--attention):not(.insight-row--positive) {
-  background: rgba(255, 255, 255, 0.1);
-}
-.insight-row__time,
-.insight-row__sep { color: var(--glass-ink-dim); }
-.insight-row__note { color: var(--glass-ink-dim); }
-.feed__empty { color: var(--glass-ink-dim); }
+/* ----- Insights right rail — solid cream plaques → ink-press text ----- */
+.rail__panel { color: var(--color-ink-press); }
+.rail__label { color: var(--color-ink-muted); }
+.livechip { color: var(--color-ink-press); }
+.livechip__label { color: var(--color-ink-muted); }
+.livechip__value { color: var(--color-ink-press); }
+.livechip__spark { color: var(--color-ink-faint); }
+.rail__feed-scroll { scrollbar-color: rgba(31, 26, 46, 0.2) transparent; }
+.rail__feed-scroll::-webkit-scrollbar-thumb { background: rgba(31, 26, 46, 0.18); }
+.insight-row { color: var(--color-ink-press); border-bottom-color: rgba(31, 26, 46, 0.08); }
+.insight-row__time { color: var(--color-ink-press); }
+.insight-row__sep { color: var(--color-ink-muted); }
+.insight-row__note { color: var(--color-ink-press); }
+.feed__empty { color: var(--color-ink-muted); }
 
 /* ----- Recording indicator ----- */
 .rec-indicator { color: var(--glass-ink); }
 
-/* The Progress title pill hosts the inline-editable talk name. Keep the edit
-   field's text dark on its cream input (it inherits white from the pill). */
-.screen-title .inline-edit__input { color: var(--ink); }
+/* The talk-name span inherits the title's Anek Telugu / ink-deep colour as a
+   child of .screen-title — no per-control overrides needed (see .talk-name). */
 
 /* =====================================================================
    Recording controls (additions) — storage notice + "removed" toast,
@@ -3119,19 +3539,6 @@ input[type="range"] {
   padding: 12px 18px;
 }
 
-/* Demo-video fallback label — small mono tag under the header line. */
-.demo-tag {
-  position: absolute;
-  top: 92px;
-  left: 24px;
-  z-index: 3;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.01em;
-  color: rgba(255, 255, 255, 0.6);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
 /* Muted, secondary "Delete all recordings" — a safety valve, not a CTA. */
 .progress__delete-recordings.btn {
   background: transparent;
@@ -3145,5 +3552,827 @@ input[type="range"] {
 .progress__delete-recordings.btn:hover {
   opacity: 1;
   color: var(--danger);
-  background: rgba(182, 101, 101, 0.08);
+  background: rgba(199, 122, 63, 0.08);
 }
+
+/* =====================================================================
+   WARM GRADIENT AURAS — atmospheric blooms behind hero content.
+   Soft, blurry, low-opacity radial gradients that tint the air. Pure
+   decoration: never interactive, always behind the UI. Sunlight through
+   paper — present, never demanding attention.
+   ===================================================================== */
+.aura {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  /* Behind static content, above the host screen's own background box.
+     Hosts must establish a stacking context (position + isolation) so this
+     stays contained. The Insights variant overrides z-index (see below). */
+  z-index: -1;
+  filter: blur(80px);
+  opacity: 0.4;
+  will-change: transform;
+}
+/* Bloom colorways — heavy blur softens the hard radial edge into a wash. */
+.aura--purple-pink {
+  background: radial-gradient(circle, var(--aura-pink) 0%, var(--aura-purple) 45%, transparent 72%);
+}
+.aura--pink-orange {
+  background: radial-gradient(circle, var(--aura-orange) 0%, var(--aura-pink) 45%, transparent 72%);
+}
+.aura--orange {
+  background: radial-gradient(circle, var(--aura-orange) 0%, var(--aura-pink) 38%, transparent 70%);
+}
+
+/* Host screens that need a contained stacking context for z-index:-1 auras. */
+.screen.home,
+.scene-screen { isolation: isolate; }
+
+/* ----- Home placements ----- */
+.aura--home-hero {
+  top: -120px;
+  left: -60px;
+  width: 760px;
+  height: 760px;
+  opacity: 0.38;
+}
+.aura--home-corner {
+  right: -140px;
+  bottom: -160px;
+  width: 600px;
+  height: 600px;
+  opacity: 0.3;
+}
+
+/* ----- Scene screens (Pick a room / Set audience) -----
+   The 3D canvas is opaque and fills the screen, so the bloom rides just
+   above it (below all UI) as a faint, off-center atmospheric tint rather
+   than a true backdrop. Kept low-opacity so the room + pills stay clear. */
+.scene-screen .aura {
+  z-index: 1;
+  opacity: 0.22;
+  filter: blur(90px);
+  mix-blend-mode: screen;
+}
+.aura--scene {
+  top: -80px;
+  right: -120px;
+  width: 640px;
+  height: 640px;
+}
+
+/* ----- Insights — subtle purple bloom upper-right, behind the rail -----
+   Sits above the dark video (z-index 1) but below the rail (z 3) and the
+   center play button (z 4). Low opacity so it never competes with the video. */
+.aura--insights {
+  z-index: 1;
+  top: -160px;
+  right: -120px;
+  width: 620px;
+  height: 620px;
+  opacity: 0.3;
+  mix-blend-mode: screen;
+}
+
+/* ----- Progress placements ----- */
+.aura--progress-hero {
+  top: -180px;
+  left: 4%;
+  width: 720px;
+  height: 720px;
+  opacity: 0.34;
+}
+.aura--progress-bottom {
+  right: -120px;
+  bottom: -200px;
+  width: 560px;
+  height: 560px;
+  opacity: 0.26;
+}
+
+/* =====================================================================
+   BLUR-TO-FOCUS — screen-entry settle. The screen mounts slightly blurred
+   and faded, then settles into focus over 500ms. Echoes the product idea:
+   practice makes the unclear clear. Runs once on mount (no fill-mode, so
+   the computed filter reverts to none and doesn't trap fixed descendants).
+   Skipped mid-rehearsal — that screen has its own Start-gate focus moment.
+   ===================================================================== */
+@keyframes settleIn {
+  from { filter: blur(8px); opacity: 0.6; }
+  to   { filter: blur(0px); opacity: 1; }
+}
+.settle-in {
+  animation: settleIn 0.5s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settle-in { animation: none; }
+}
+
+/* =====================================================================
+   HOME — split composition (HOME ONLY): typographic hero on the left, an
+   elliptical floating-card carousel on the right over a cream background
+   with a single warm peach aura, top-right. Every other screen keeps the
+   warm beige + bloom system.
+   ===================================================================== */
+.screen.home {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+/* Ambient warmth now comes from the orbiting <.home-aura> blobs (below). */
+/* Film-grain overlay — printed-paper texture over the aura + cream. */
+.screen.home::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* Ambient orbit aura — two soft blobs (peach + light pink) drifting in slow,
+   opposed circles behind all Home content. z0; headline/cards/+New are z≥1. */
+.home-aura {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.home-aura__blob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(75vw, 1000px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(var(--blur-aura));
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+.home-aura__blob--peach {
+  background: radial-gradient(circle, var(--color-aura-peach) 0%, transparent 70%);
+  animation: auraOrbitPeach 24s linear infinite;
+}
+.home-aura__blob--pink {
+  background: radial-gradient(circle, var(--color-aura-pink-light) 0%, transparent 70%);
+  animation: auraOrbitPink 24s linear infinite;
+}
+@keyframes auraOrbitPeach {
+  0%   { transform: translate(-50%, -50%) translate( 220px,    0) scale(1.05); }
+  25%  { transform: translate(-50%, -50%) translate(    0,  160px) scale(1.05); }
+  50%  { transform: translate(-50%, -50%) translate(-220px,    0) scale(1.05); }
+  75%  { transform: translate(-50%, -50%) translate(    0, -160px) scale(1.05); }
+  100% { transform: translate(-50%, -50%) translate( 220px,    0) scale(1.05); }
+}
+@keyframes auraOrbitPink {
+  0%   { transform: translate(-50%, -50%) translate(-220px,    0) scale(1); }
+  25%  { transform: translate(-50%, -50%) translate(    0, -160px) scale(1); }
+  50%  { transform: translate(-50%, -50%) translate( 220px,    0) scale(1); }
+  75%  { transform: translate(-50%, -50%) translate(    0,  160px) scale(1); }
+  100% { transform: translate(-50%, -50%) translate(-220px,    0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-aura__blob { animation: none; }
+}
+
+/* Eyebrow — "● rehearsal", lowercase, deep-purple, top-left. */
+/* App wordmark — fixed top-left on every screen (see <Logo>). Deep-purple on
+   the light screens; flips to white on the dark in-session screens. */
+.app-logo {
+  position: fixed;
+  top: 24px;
+  left: 32px;
+  z-index: 7;
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: 6px;
+  transition: opacity 0.15s ease;
+}
+.app-logo:hover { opacity: 0.7; }
+.app-logo:focus-visible { outline: none; background: rgba(31, 26, 46, 0.06); border-radius: 8px; }
+/* Recording-light dot — warm red, pulsing with an expanding halo on every
+   screen the logo appears on. */
+.app-logo__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-aura-pink);
+  /* Hard on/off blink — no halo, no fade, no partial transparency. */
+  animation: logoDotBlink 1.4s linear infinite;
+}
+@keyframes logoDotBlink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-logo__dot { animation: none; }
+}
+.app-logo__word {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: currentColor;
+}
+/* Dark in-session screens → white wordmark for contrast. */
+.app[data-screen='rehearsing'] .app-logo { color: #fff; }
+/* Insights: logo reads as deep ink (dot stays --color-record), with a faint
+   white shadow for legibility over lighter spots. */
+.app[data-screen='insights'] .app-logo { color: var(--color-ink-deep); }
+.app[data-screen='insights'] .app-logo__word { text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4); }
+
+/* Hero headline — TOP-CENTRE, solid deep-purple, sentence case. The locked
+   prefix sits on line 1; the cycling word on line 2. Both centred. */
+.home__headline {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  margin: 0;
+  pointer-events: none;
+  text-align: center;
+  font-family: var(--font-title); /* Anek Telugu */
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.0;
+  font-size: 212px; /* the cycling word */
+  color: var(--ink);
+}
+/* Locked "Let's train your" — smaller than the cycling word, always one line. */
+.home__headline-prefix {
+  display: block;
+  white-space: nowrap;
+  font-size: 130px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+@media (max-width: 900px) {
+  .home__headline { font-size: clamp(96px, 22vw, 212px); }
+  .home__headline-prefix { font-size: clamp(58px, 14vw, 130px); }
+}
+/* The cycling word drops onto the line(s) below the prefix, at the big size.
+   Each word is a no-wrap unit (no mid-word break); multi-word phrases keep a
+   breakable space so they may wrap onto a second line. */
+/* The cycling word sits on its own line below the locked prefix and never
+   wraps — multi-word phrases ("wedding toast", "TED talk") stay on ONE line;
+   a long word just extends the line. */
+.home__cycle { display: block; white-space: nowrap; }
+.home__cycle-word { white-space: nowrap; }
+
+/* =====================================================================
+   HOME GALLERY — talk cards ride a curved vertical trajectory down the right
+   side, across five fixed slots (entry → active → exit) that bulge slightly
+   left at the active middle. Slot top/right/scale/blur/opacity come straight
+   from JS; each card animates between slots over 600ms (CSS transition). No
+   elliptical math.
+   ===================================================================== */
+.home__gallery {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  touch-action: none;
+  overflow: visible;
+  pointer-events: none; /* click-through layer; cards opt back in */
+}
+/* Liquid-glass card — a single frosted layer (no white inner wrapper). Cards
+   are centred on their rail slot (left %); the per-card transition (with its
+   cascade delay) is set inline so the march can stagger. */
+/* ===== Shared white liquid-glass card ====================================
+   White glass fill, 28px blur, 0.5px white border, 26px radius, soft shadow.
+   Used by the Home talk cards. (Insights plaques are solid cream — see below.) */
+.liquid-card,
+.ecard {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  border: 0.5px solid var(--color-glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* ===== Insights right-rail plaques — SOLID cream, no glass =================
+   Opaque cream fill (no transparency / blur / glass border); lifted off the
+   video by a single soft shadow. Smaller radii than the Home cards. */
+.insights-screen .rail__panel,
+.insights-screen .rail__plaques .livechip {
+  background: var(--color-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: var(--shadow-sm);
+}
+.insights-screen .rail__panel { border-radius: var(--radius-lg); }   /* 16px */
+.insights-screen .rail__plaques .livechip { border-radius: var(--radius-md); } /* 12px */
+
+.ecard {
+  position: absolute;
+  width: 384px;
+  height: 336px; /* bigger; taller than 4:3, closer to square */
+  pointer-events: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  cursor: pointer;
+  will-change: left, opacity;
+}
+.ecard__head { display: flex; align-items: flex-start; gap: 8px; }
+.ecard__head-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+.ecard__name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ecard__meta {
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ecard__kebab { flex-shrink: 0; margin: -2px -2px 0 0; }
+.ecard__head-text .talk-card__rename-input {
+  font-size: 14px;
+  font-weight: 600;
+  width: 100%;
+  padding: 1px 6px;
+}
+/* Rehearsal pile inside the card — latest poster on top, older ones peeking
+   behind (stacked-papers), offset up-right + scaled + faintly blurred. */
+.ecard__pile {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.ecard__doc {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background-image: url('/video-poster.jpg'), linear-gradient(135deg, #4a4350 0%, #2c303d 100%);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 2px 8px rgba(31, 26, 46, 0.14);
+}
+.ecard__doc--front { z-index: 3; }
+.ecard__doc--b1 { z-index: 2; transform: translate(7px, -7px) scale(0.95) rotate(1.5deg); filter: blur(0.5px); }
+.ecard__doc--b2 { z-index: 1; transform: translate(-6px, -13px) scale(0.9) rotate(-1.5deg); filter: blur(0.5px); }
+/* No rehearsals yet → a muted blank placeholder instead of a poster. */
+.ecard__doc--empty {
+  background-image: none;
+  background: rgba(31, 26, 46, 0.05);
+  border: 1px dashed rgba(31, 26, 46, 0.12);
+  box-shadow: none;
+}
+/* "Rehearse" pill — bottom-right of the poster. */
+.ecard__rehearse {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 12px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.15s ease;
+}
+.ecard__rehearse:hover { background: var(--ink); }
+
+/* Standalone circular "+ new" — BOTTOM-CENTRE, ~32px from the bottom edge.
+   Wrapped so click ripples can emanate from behind the (fixed) button. */
+.home__plus-wrap {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: 64px;
+  height: 64px;
+}
+.home__plus {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  appearance: none;
+  background: var(--color-surface);
+  border: none;
+  outline: none;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(31, 26, 46, 0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+}
+.home__plus:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(31, 26, 46, 0.14);
+  background: #FDEFE3;
+}
+
+/* Circle-button GLOW SWIRL — on click, two soft aura blobs (peach leads, pink
+   follows 80ms) bloom from the button centre and arc outward in opposite
+   directions, fading as they grow. Portaled to <body> as a fixed, viewport-
+   clipped layer so panels never clip it. The button itself never moves. */
+.glow-wash-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Above the modal backdrop dim (50) but below the modal card layer (60), so
+     the "+ New" swirl plays BEHIND the opening plaque, not over it. */
+  z-index: 55;
+}
+/* Per-click container pinned to the button centre; blobs are 50%/50% of it. */
+.glow-burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.glow-blob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1400px;
+  height: 1400px;
+  border-radius: 50%;
+  filter: blur(var(--blur-aura));
+  pointer-events: none;
+  z-index: 1;
+  transform: translate(-50%, -50%) scale(0.12);
+  opacity: 0;
+}
+.glow-blob--peach {
+  background: radial-gradient(circle, var(--color-aura-peach) 0%, transparent 70%);
+  animation: glowSwirlPeach 2100ms cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+.glow-blob--pink {
+  background: radial-gradient(circle, var(--color-aura-pink-light) 0%, transparent 70%);
+  animation: glowSwirlPink 2100ms cubic-bezier(0.2, 0.7, 0.4, 1) 80ms forwards;
+}
+@keyframes glowSwirlPeach {
+  0% { transform: translate(-50%, -50%) rotate(20deg) translateX(0) scale(0.12); opacity: 0; }
+  15% { opacity: 0.82; }
+  100% { transform: translate(-50%, -50%) rotate(120deg) translateX(520px) scale(0.85); opacity: 0; }
+}
+@keyframes glowSwirlPink {
+  0% { transform: translate(-50%, -50%) rotate(-20deg) translateX(0) scale(0.12); opacity: 0; }
+  15% { opacity: 0.78; }
+  100% { transform: translate(-50%, -50%) rotate(-120deg) translateX(520px) scale(0.85); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-blob { display: none; }
+}
+.home__plus svg { width: 28px; height: 28px; }
+
+/* Zero-talk empty state — a single, larger "+" centred with a label. */
+/* Empty-state placeholder card — sits at the arch apex, same dimensions + glass
+   as a real talk card. Not interactive; no poster pile, Rehearse pill, or kebab. */
+.ecard--empty { cursor: default; }
+.ecard--empty .ecard__name {
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink-deep);
+}
+.ecard--empty .ecard__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-ink-muted);
+}
+.ecard__empty-pile {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  border: 1.5px dashed rgba(31, 26, 46, 0.18);
+  background: rgba(31, 26, 46, 0.03);
+  border-radius: var(--radius-md);
+}
+.ecard__empty-pile span {
+  font-family: var(--font-title);
+  font-size: var(--font-size-lg);
+  color: var(--color-ink-muted);
+}
+
+/* =====================================================================
+   TITLE EYEBROWS — the small uppercase tracking labels (REHEARSAL,
+   VOICE / ROOM / MOVEMENT, REHEARSALS, AUDIENCE / INSIGHTS, CALM /
+   AUDIENCE HELD / CONFIDENCE, FOCUS NEXT / STRENGTH) switch to Anek
+   Telugu. Size + color stay as defined elsewhere; only the typeface,
+   caps, weight, and tracking change. Buttons + body copy stay Inter.
+   ===================================================================== */
+.home__brand,
+.lane__eyebrow,
+.rehearsals-list__label,
+.rail__label,
+.livechip__label,
+.fs-card__eyebrow {
+  font-family: var(--font-title);
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+/* =====================================================================
+   PROGRESS v2 — coaching article (left 2/3, scrolls) + sticky video pile
+   (right 1/3). Replaces the Voice/Room/Movement data cards and the small
+   REHEARSALS rail. Title + subtitle sit top-left (see .screen-title).
+   ===================================================================== */
+.progress2 {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  overflow: hidden;
+  padding: 140px 32px 28px;
+}
+/* Subtitle under the (top-left) title: rehearsal count · room · size · warmth
+   · attention, with a small edit pencil that opens Edit setup. Left-aligned. */
+.progress2__meta {
+  position: absolute;
+  top: 104px;
+  left: 32px;
+  max-width: calc(100% - 96px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  z-index: 5;
+}
+.progress2__meta-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.progress2__meta-edit {
+  appearance: none;
+  flex: none;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: 6px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.progress2__meta-edit:hover { opacity: 1; color: var(--ink); background: rgba(31, 26, 46, 0.06); }
+.progress2__meta-edit:focus-visible { outline: none; background: rgba(31, 26, 46, 0.06); }
+.progress2__body {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 40px;
+  min-height: 0;
+}
+@media (max-width: 880px) {
+  .progress2__body { grid-template-columns: 1fr; }
+}
+
+/* ----- Left: the coaching article — a pile of insight papers (scrolls) ----- */
+.progress2__article {
+  overflow-y: auto;
+  max-height: 100%;
+  padding: 6px 18px 48px 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 26, 46, 0.18) transparent;
+}
+.progress2__article::-webkit-scrollbar { width: 6px; }
+.progress2__article::-webkit-scrollbar-thumb { background: rgba(31, 26, 46, 0.16); border-radius: 999px; }
+
+/* The pile: one paper per rehearsal, latest on top, ~12px overlap downward. */
+.insight-pile { display: block; }
+.insight-paper {
+  position: relative;
+  background: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(31, 26, 46, 0.08);
+  padding: 32px;
+  margin-top: -12px;          /* pile overlap */
+  transform: rotate(var(--rot, 0deg));
+  color: var(--ink);
+}
+.insight-paper:first-child { margin-top: 0; }
+.insight-paper__eyebrow {
+  font-family: var(--font-title);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: var(--ink-2);
+  margin-bottom: 16px;
+}
+/* Body splits into observation text (left 60%) + a tip card (right 40%). */
+.insight-paper__body {
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+}
+.insight-paper__obs { flex: 1 1 60%; min-width: 0; }
+.insight-paper__p {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ink);          /* single deep-purple ink, no semantic tints */
+  margin: 0 0 12px;
+}
+.insight-paper__p:last-child { margin-bottom: 0; }
+.insight-paper__p strong { font-weight: 700; color: var(--ink); }   /* refs + timestamps */
+.insight-paper__p .quote { font-style: italic; font-weight: 400; color: var(--ink-3); } /* quotes only */
+
+/* Tip card — peach-tinted, actionable advice tied to the observation. */
+.insight-tip {
+  position: relative;
+  flex: 0 0 40%;
+  align-self: flex-start;
+  background: rgba(244, 164, 122, 0.08);
+  border-radius: 12px;
+  padding: 20px;
+}
+.insight-tip__eyebrow {
+  font-family: var(--font-title);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+  /* keep clear of the top-right bulb */
+  padding-right: 22px;
+}
+/* Bulb sits in the top-right corner of the tip card. */
+.insight-tip__bulb { position: absolute; top: 16px; right: 16px; color: #d98a52; }
+.insight-tip__p {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+}
+@media (max-width: 980px) {
+  .insight-paper__body { flex-direction: column; }
+  .insight-tip { flex-basis: auto; align-self: stretch; }
+}
+
+/* ----- Right: sticky video pile + actions ----- */
+.progress2__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Scrollable newest-first video LIST (no overlap). */
+.progress2__pile-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 4px 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 26, 46, 0.18) transparent;
+}
+.progress2__pile-wrap::-webkit-scrollbar { width: 6px; }
+.progress2__pile-wrap::-webkit-scrollbar-thumb { background: rgba(31, 26, 46, 0.16); border-radius: 999px; }
+.vpile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+/* The poster image IS the card — 16:9 landscape, rounded, text on a fade. */
+.vcard {
+  position: relative;
+  width: 100%;
+  flex: none;
+  aspect-ratio: 16 / 9;
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: #2c303d;
+  background-image: url('/video-poster.jpg'), linear-gradient(135deg, #4a4350 0%, #2c303d 100%);
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.2s ease-out, opacity 0.25s ease-out;
+}
+.vcard:hover {
+  transform: translateY(-2px);
+}
+.vcard__overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 60%);
+}
+.vcard__num { font-family: var(--font-body); font-weight: 600; font-size: 16px; color: #fff; }
+.vcard__meta { font-family: var(--font-body); font-weight: 400; font-size: 12px; color: rgba(255, 255, 255, 0.7); }
+
+/* Per-card delete — revealed on hover (the hovered card pops to the front, so
+   its top-right corner is always reachable). */
+.vcard__trash {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+.vcard:hover .vcard__trash,
+.vcard__trash:focus-visible { opacity: 1; transform: scale(1); }
+.vcard__trash:hover { background: rgba(0, 0, 0, 0.78); }
+.vcard__trash:focus-visible { outline: none; background: rgba(0, 0, 0, 0.78); }
+/* Exit animation when a rehearsal is deleted — fade + shrink + drop away. */
+.vcard--removing {
+  opacity: 0 !important;
+  transform: scale(0.92) !important;
+  pointer-events: none;
+}
+
+.progress2__rail-actions {
+  margin-top: auto;
+  padding-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.progress2__newreh { width: 100%; }
+/* Bottom button row — Edit setup (ghost) + Start, both natural width, centred. */
+.progress2__btn-row {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  align-items: stretch;
+}
+.progress2__btn-row .btn { align-self: stretch; }
+.progress2__deletelink {
+  appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-3);
+  padding: 4px 8px;
+  transition: color 0.15s ease;
+}
+.progress2__deletelink:hover { color: var(--danger); }

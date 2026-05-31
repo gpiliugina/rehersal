@@ -1,0 +1,168 @@
+/* ===========================================================================
+   REHEARSAL — DESIGN TOKENS
+   Single source of truth for every primitive value in the app. Extracted from
+   an audit of the existing stylesheets (see design-tokens-audit.md), with
+   near-duplicates consolidated. Names are SEMANTIC (--color-ink-deep), not
+   value-based. The legacy variables in index.css are remapped onto these.
+   =========================================================================== */
+:root {
+  /* ===== COLORS ========================================================== */
+
+  /* — Backgrounds (minimised to 3) — */
+  --color-bg: #f8f2e5;          /* app base / page background */
+  --color-surface: #fcfaf5;     /* ALL cards, plaques, modals — brightest cream */
+  --color-bg-sunken: #efe7d6;   /* recessed / inset areas only (via --bg-2) */
+
+  /* — Ink (text + dark surfaces) — */
+  --color-ink-deep: #1f1a2e;    /* primary text + dark surfaces */
+  --color-ink-press: #2a1f35;   /* pressed/hover deepening of ink */
+  --color-ink-muted: #4a4258;   /* secondary text */
+  --color-ink-faint: #8b8395;   /* tertiary text + dividers */
+  --color-line: #e4dac9;        /* warm hairline divider */
+  --color-white: #ffffff;
+
+  /* — Semantic — */
+  --color-sage: #7c8b5c;        /* positive (olive-sage) */
+  --color-copper: #c77a3f;      /* issue / danger (burnt copper — no red) */
+  --color-issue: #c77a3f;       /* alias — "issue" copper */
+  --color-copper-deep: #b36a33; /* copper hover */
+  --color-copper-press: #9c5a2a;/* copper active */
+  --color-bulb: #d98a52;        /* tip-card bulb */
+  --color-record: #c44832;      /* recording dot + destructive + wipe gradient */
+
+  /* — Liquid glass (cards floating over the warm gradient) — */
+  --color-glass-bg: rgba(255, 255, 255, 0.22);
+  --color-glass-bg-strong: rgba(255, 255, 255, 0.45); /* over bright video — more body */
+  --color-glass-border: rgba(255, 255, 255, 0.5);
+
+  /* — Frosted glass (chrome over 3D scenes / video) — */
+  --color-scrim-fill: rgba(31, 26, 46, 0.55);
+  --color-scrim-border: rgba(255, 255, 255, 0.14);
+  --color-glass-ink: #ffffff;
+  --color-glass-ink-dim: rgba(255, 255, 255, 0.64);
+  --color-glass-ink-faint: rgba(255, 255, 255, 0.42);
+
+  /* — Aura / atmospheric blooms — */
+  --color-aura-purple: #8b6fbf;
+  --color-aura-pink: #e89aab;
+  --color-aura-pink-light: rgba(244, 186, 203, 0.55); /* orbit aura + glow swirl */
+  --color-aura-peach: #f4a47a;
+  --gradient-warm: linear-gradient(135deg, #8b6fbf 0%, #e89aab 50%, #f4a47a 100%);
+
+  /* — Video poster fallback — */
+  --color-poster-a: #4a4350;
+  --color-poster-b: #2c303d;
+  --gradient-poster: linear-gradient(135deg, #4a4350 0%, #2c303d 100%);
+
+  /* — Overlays / scrims — */
+  --color-scrim: rgba(31, 26, 46, 0.25);    /* modal backdrop */
+  --color-overlay-strong: rgba(0, 0, 0, 0.75); /* video text gradient */
+  --color-tip-peach: rgba(244, 164, 122, 0.08); /* insight tip bg */
+  --color-ripple-ring: rgba(244, 164, 122, 0.4);
+  --color-ripple-fill: rgba(244, 164, 122, 0.1);
+
+  /* ===== TYPOGRAPHY ===================================================== */
+
+  --font-title: 'Anek Telugu', sans-serif; /* display / headings */
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Sizes — body + UI scale */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  /* Sizes — display (Anek Telugu) */
+  --text-display-sm: 36px;
+  --text-display-md: 48px;
+  --text-display-lg: 62px;
+  --text-display-xl: 96px;
+
+  /* Weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  /* Aliases referenced directly in component specs (--font-size-* / weight) */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-size-2xs: 10px;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px; /* default UI item size */
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+
+  /* Line-heights */
+  --leading-tight: 1.1;
+  --leading-snug: 1.4;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ===== SPACING (4px scale) =========================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ===== RADII ========================================================== */
+  --radius-2xs: 8px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-input: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 22px;
+  --radius-card: 26px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+
+  /* ===== SHADOWS ======================================================== */
+  --shadow-sm: 0 2px 8px rgba(31, 26, 46, 0.10); /* small soft lift (solid cards) */
+  --shadow-soft: 0 1px 2px rgba(31, 26, 46, 0.04), 0 8px 32px rgba(31, 26, 46, 0.06);
+  --shadow-card: 0 8px 32px rgba(31, 26, 46, 0.08);
+  --shadow-pop: 0 8px 20px rgba(31, 26, 46, 0.14);
+  --shadow-lg: 0 12px 32px rgba(31, 26, 46, 0.16); /* dropdowns / popovers */
+  --shadow-lift: 0 16px 34px rgba(31, 26, 46, 0.22);
+  --shadow-button: 0 8px 22px rgba(31, 26, 46, 0.18);
+  --shadow-modal: 0 24px 64px rgba(31, 26, 46, 0.18), 0 2px 8px rgba(31, 26, 46, 0.08);
+  --shadow-glass: 0 8px 24px rgba(31, 26, 46, 0.15);
+
+  /* ===== BLURS ========================================================== */
+  --blur-hair: 0.5px;
+  --blur-sm: 4px;
+  --blur-md: 8px;
+  --blur-lg: 16px;
+  --blur-xl: 24px;
+  --blur-glass: 28px;
+  --blur-aura: 40px;
+
+  /* ===== EASING ========================================================= */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);   /* material standard */
+  --ease-out-soft: cubic-bezier(0.2, 0.9, 0.3, 1); /* gentle settle */
+  --ease-pop: cubic-bezier(0.2, 0.9, 0.3, 1);      /* alias — popover/dropdown */
+  --ease-ripple: cubic-bezier(0.22, 0.61, 0.36, 1); /* glow-wash bloom */
+  --ease-march: cubic-bezier(0.55, 0, 0.7, 0.95);  /* card march cascade */
+
+  /* ===== DURATIONS ====================================================== */
+  --dur-instant: 0.12s;
+  --dur-fast: 0.15s;
+  --dur-base: 0.2s;
+  --dur-slow: 0.25s;
+  --dur-slower: 0.5s;
+  --dur-pulse: 1.6s;     /* recording-dot pulse */
+  --dur-ripple: 1.3s;    /* ripple ring expand */
+  --dur-glow: 1.7s;      /* glow wash bloom */
+}

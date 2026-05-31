@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rehearsal — Design System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anek+Telugu:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== TOKENS (mirror of src/styles/tokens.css) ===================== */
+    :root {
+      /* Colors — backgrounds */
+      --color-bg: #f8f2e5; --color-surface: #fcfaf5; --color-bg-sunken: #efe7d6;
+      /* Colors — ink */
+      --color-ink-deep: #1f1a2e; --color-ink-press: #2a1f35;
+      --color-ink-muted: #4a4258; --color-ink-faint: #8b8395; --color-line: #e4dac9;
+      /* Colors — semantic */
+      --color-sage: #7c8b5c; --color-copper: #c77a3f; --color-issue: #c77a3f;
+      --color-bulb: #d98a52; --color-record: #c44832;
+      /* Colors — glass */
+      --color-glass-bg: rgba(255,255,255,0.22); --color-glass-border: rgba(255,255,255,0.5);
+      --color-scrim-fill: rgba(31,26,46,0.55); --color-scrim-border: rgba(255,255,255,0.14);
+      --color-glass-ink: #fff; --color-glass-ink-dim: rgba(255,255,255,0.64);
+      /* Colors — aura */
+      --color-aura-purple: #8b6fbf; --color-aura-pink: #e89aab; --color-aura-peach: #f4a47a;
+      --color-aura-pink-light: rgba(244,186,203,0.55);
+      --gradient-warm: linear-gradient(135deg,#8b6fbf 0%,#e89aab 50%,#f4a47a 100%);
+      --color-poster-a: #4a4350; --color-poster-b: #2c303d;
+      --gradient-poster: linear-gradient(135deg,#4a4350 0%,#2c303d 100%);
+      /* Typography */
+      --font-title: 'Anek Telugu', sans-serif;
+      --font-body: 'Inter', -apple-system, sans-serif;
+      --font-size-2xs: 10px; --font-size-xs: 11px; --font-size-sm: 12px;
+      --font-size-base: 14px; --font-size-md: 14px; --font-size-lg: 16px;
+      --font-size-xl: 18px; --text-2xl: 22px; --text-3xl: 28px;
+      --text-display-sm: 36px; --text-display-md: 48px; --text-display-lg: 62px; --text-display-xl: 96px;
+      --font-weight-regular: 400; --font-weight-medium: 500; --font-weight-semibold: 600; --font-weight-bold: 700;
+      --leading-tight: 1.1; --leading-snug: 1.4; --leading-normal: 1.5; --leading-relaxed: 1.65;
+      /* Spacing */
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+      --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px;
+      /* Radii */
+      --radius-2xs: 8px; --radius-xs: 6px; --radius-sm: 8px; --radius-md: 12px;
+      --radius-input: 14px; --radius-lg: 16px; --radius-xl: 20px; --radius-2xl: 22px;
+      --radius-card: 26px; --radius-pill: 999px;
+      /* Shadows */
+      --shadow-soft: 0 1px 2px rgba(31,26,46,0.04), 0 8px 32px rgba(31,26,46,0.06);
+      --shadow-card: 0 8px 32px rgba(31,26,46,0.08);
+      --shadow-pop: 0 8px 20px rgba(31,26,46,0.14);
+      --shadow-lg: 0 12px 32px rgba(31,26,46,0.16);
+      --shadow-lift: 0 16px 34px rgba(31,26,46,0.22);
+      --shadow-modal: 0 24px 64px rgba(31,26,46,0.18), 0 2px 8px rgba(31,26,46,0.08);
+      /* Blurs */
+      --blur-sm: 4px; --blur-md: 8px; --blur-lg: 16px; --blur-xl: 24px; --blur-glass: 28px; --blur-aura: 40px;
+      /* Easing */
+      --ease-standard: cubic-bezier(0.4,0,0.2,1); --ease-pop: cubic-bezier(0.2,0.9,0.3,1);
+      --ease-ripple: cubic-bezier(0.22,0.61,0.36,1); --ease-march: cubic-bezier(0.55,0,0.7,0.95);
+      /* Durations */
+      --dur-instant: 0.12s; --dur-fast: 0.15s; --dur-base: 0.2s; --dur-slow: 0.25s; --dur-slower: 0.5s;
+    }
+
+    /* ===== Storybook chrome ============================================= */
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font-body); color: var(--color-ink-deep); background: var(--color-bg); display: flex; }
+    a { color: inherit; text-decoration: none; }
+    .label { font-family: var(--font-body); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-ink-muted); }
+
+    .sb-side { position: sticky; top: 0; align-self: flex-start; width: 240px; height: 100vh; overflow-y: auto; background: var(--color-bg-sunken); border-right: 1px solid var(--color-line); padding: 24px 18px; flex: none; }
+    .sb-mark { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; margin-bottom: 24px; }
+    .sb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-record); }
+    .sb-side h4 { font-family: var(--font-body); font-size: var(--font-size-2xs); font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-ink-faint); margin: 18px 0 6px; }
+    .sb-side a { display: block; padding: 6px 10px; border-radius: 8px; font-size: 14px; color: var(--color-ink-muted); }
+    .sb-side a:hover { background: rgba(31,26,46,0.05); color: var(--color-ink-deep); }
+
+    .sb-main { flex: 1; min-width: 0; }
+    .sb-wrap { max-width: 1200px; margin: 0 auto; padding: 48px 56px 120px; }
+    .sb-hero h1 { font-family: var(--font-title); font-weight: 500; font-size: 56px; margin: 0 0 8px; letter-spacing: -0.02em; }
+    .sb-hero p { color: var(--color-ink-muted); font-size: 16px; margin: 0 0 8px; }
+    section { padding: 40px 0; border-top: 1px solid var(--color-line); }
+    section > h2 { font-family: var(--font-title); font-weight: 500; font-size: 30px; margin: 0 0 4px; }
+    section > .sb-sub { color: var(--color-ink-faint); font-size: 14px; margin: 0 0 24px; }
+    .grid { display: grid; gap: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+    .stage { background: var(--color-bg); border: 1px solid var(--color-line); border-radius: 16px; padding: 28px; position: relative; overflow: hidden; }
+    .stage--warm { background: var(--gradient-warm); }
+    .stage--room { background: linear-gradient(160deg,#f1ece2,#e7d9c3); }
+    .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--color-ink-faint); }
+
+    /* swatches */
+    .swatches { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    .swatch { border: 1px solid var(--color-line); border-radius: 12px; overflow: hidden; background: #fff; }
+    .swatch .chip { height: 64px; background-image: linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%); background-size: 16px 16px; background-position: 0 0,0 8px,8px -8px,-8px 0; }
+    .swatch .chip > i { display: block; height: 100%; }
+    .swatch .meta { padding: 8px 10px; }
+    .swatch .meta b { display: block; font-size: 12px; font-weight: 600; }
+    .swatch .meta span { font-size: 11px; color: var(--color-ink-faint); }
+
+    /* type rows */
+    .typerow { display: grid; grid-template-columns: 220px 1fr; align-items: baseline; gap: 16px; padding: 10px 0; border-bottom: 1px dashed var(--color-line); }
+    .typerow .mono { white-space: nowrap; }
+
+    /* spacing bars */
+    .spacebar { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 12px; margin: 6px 0; }
+    .spacebar i { height: 16px; background: var(--color-aura-peach); border-radius: 4px; }
+
+    /* radii / shadows / blurs grids */
+    .tiles { grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); }
+    .radiitile { height: 110px; background: var(--color-ink-deep); color: #fff; display: flex; align-items: flex-end; padding: 10px; font-size: 12px; }
+    .shadowtile { height: 110px; background: #fff; border-radius: 14px; display: flex; align-items: flex-end; padding: 10px; font-size: 12px; color: var(--color-ink-muted); }
+    .blurtile { height: 110px; border-radius: 14px; display: flex; align-items: flex-end; padding: 10px; font-size: 12px; color: #fff; position: relative; overflow: hidden; }
+    .blurtile .glass { position: absolute; inset: 0; }
+
+    /* easing tracks */
+    .easetrack { height: 40px; background: rgba(31,26,46,0.05); border-radius: 999px; position: relative; margin: 6px 0; }
+    .easetrack i { position: absolute; top: 6px; left: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--color-record); }
+
+    /* duration boxes */
+    .durbox { width: 90px; height: 90px; border-radius: 16px; background: var(--color-ink-deep); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
+    .durbox:hover { transform: scale(1.12) rotate(8deg); }
+
+    /* ===== Component styles (mirror production class names) ============= */
+    .app-logo { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; }
+    .app-logo__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-aura-pink); animation: logoDotBlink 1.4s linear infinite; }
+    .app-logo__word { font-family: var(--font-body); font-weight: 600; font-size: 14px; color: var(--color-ink-deep); }
+    @keyframes logoDotBlink { 0%,50%{opacity:1;} 50.01%,100%{opacity:0;} }
+
+    .btn { appearance: none; border: none; outline: none; background: var(--color-ink-deep); color: #fff; padding: 12px 20px; border-radius: var(--radius-sm); font: inherit; font-weight: 500; cursor: pointer; position: relative; overflow: hidden; z-index: 0; }
+    .btn::after { content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(90deg,var(--color-aura-peach) 0%,var(--color-aura-pink) 100%); transform:scaleX(0); transform-origin:left center; transition:transform 380ms cubic-bezier(0.65,0,0.35,1); }
+    .btn:hover::after, .btn:focus-visible::after { transform: scaleX(1); }
+    .btn:active::after { transform: scaleX(1) scaleY(1.1); }
+    .btn:focus-visible { outline: none; }
+    .btn--ghost { background: transparent; color: var(--color-ink-deep); border: 1px solid var(--color-ink-deep); }
+    .btn--ghost::after { display:none; }
+    .btn--ghost:focus-visible { background: rgba(31,26,46,0.06); }
+    .btn--pill { padding: 8px 16px; font-size: 14px; }
+
+    /* glow button + two-blob swirl */
+    .glow-btn { width: 64px; height: 64px; border-radius: 50%; background: var(--color-surface); border: none; outline: none; color: var(--color-ink-deep); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-soft); position: relative; z-index: 2; }
+    .glow-host { position: relative; display: inline-grid; place-items: center; overflow: visible; }
+    .glow-wash { position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; z-index: 0; }
+    .glow-blob { position: absolute; left: 50%; top: 50%; width: 1400px; height: 1400px; border-radius: 50%; filter: blur(var(--blur-aura)); pointer-events: none; z-index: 1; transform: translate(-50%,-50%) scale(.12); opacity: 0; }
+    .glow-blob--peach { background: radial-gradient(circle, var(--color-aura-peach) 0%, transparent 70%); }
+    .glow-blob--pink { background: radial-gradient(circle, var(--color-aura-pink-light) 0%, transparent 70%); }
+    @keyframes glowSwirlPeach { 0%{transform:translate(-50%,-50%) rotate(20deg) translateX(0) scale(.12);opacity:0;} 15%{opacity:.82;} 100%{transform:translate(-50%,-50%) rotate(120deg) translateX(520px) scale(.85);opacity:0;} }
+    @keyframes glowSwirlPink { 0%{transform:translate(-50%,-50%) rotate(-20deg) translateX(0) scale(.12);opacity:0;} 15%{opacity:.78;} 100%{transform:translate(-50%,-50%) rotate(-120deg) translateX(520px) scale(.85);opacity:0;} }
+
+    /* talk card (liquid glass) */
+    .talk-card { width: 280px; height: 240px; padding: 18px; border-radius: var(--radius-card); background: var(--color-glass-bg); backdrop-filter: blur(var(--blur-glass)); -webkit-backdrop-filter: blur(var(--blur-glass)); border: .5px solid var(--color-glass-border); box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; }
+    .talk-card__name { font-weight: 600; font-size: 14px; }
+    .talk-card__meta { font-size: 12px; color: var(--color-ink-faint); }
+    .talk-card__pile { flex: 1; position: relative; }
+    .talk-card__doc { position: absolute; inset: 0; border-radius: var(--radius-sm); background: var(--gradient-poster); box-shadow: 0 2px 8px rgba(31,26,46,.14); }
+    .talk-card__doc--b1 { transform: translate(7px,-7px) scale(.95) rotate(1.5deg); }
+    .talk-card__doc--b2 { transform: translate(-6px,-13px) scale(.9) rotate(-1.5deg); }
+    .talk-card__doc--empty { background: rgba(31,26,46,.03); border: 1.5px dashed rgba(31,26,46,.18); box-shadow: none; }
+    .talk-card__rehearse { position: absolute; right: 10px; bottom: 10px; background: var(--color-ink-deep); color:#fff; border:none; border-radius:var(--radius-sm); height:28px; padding:0 12px; font-size:12px; cursor:pointer; }
+
+    /* pill (setup chip) */
+    .pill { appearance: none; border: none; box-shadow: none; cursor: pointer; font-family: var(--font-body); font-size: 12.5px; font-weight: var(--font-weight-medium); padding: 7px 13px; border-radius: var(--radius-sm); background: transparent; color: var(--color-ink-deep); transition: background 220ms ease; }
+    .pill--selected { background: rgba(31,26,46,0.06); font-weight: var(--font-weight-semibold); }
+
+    /* slider */
+    .seg-slider { position: relative; }
+    .seg-slider input { width: 240px; }
+    /* Custom slider — two-tone track (played ink-deep, remaining ink-faint),
+       ink-deep thumb. No native chrome, no track border, no thumb ring. */
+    input[type="range"] { -webkit-appearance: none; appearance: none; height: 4px; border: none; outline: none; border-radius: var(--radius-pill); background: linear-gradient(to right, var(--color-ink-deep) var(--fill, 0%), var(--color-ink-faint) var(--fill, 0%)); cursor: pointer; }
+    input[type="range"]:focus, input[type="range"]:focus-visible { outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border: none; border-radius: 50%; background: var(--color-ink-deep); cursor: pointer; }
+    input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background: var(--color-ink-deep); cursor: pointer; }
+    input[type="range"]::-moz-range-track { height: 4px; border: none; border-radius: var(--radius-pill); background: var(--color-ink-faint); }
+    input[type="range"]::-moz-range-progress { height: 4px; border-radius: var(--radius-pill); background: var(--color-ink-deep); }
+    .seg-slider__value { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* cycling headline */
+    .home__headline { font-family: var(--font-title); font-weight: 500; text-align: center; line-height: 1; letter-spacing: -0.025em; }
+    .home__headline-prefix { display: block; font-size: 28px; margin-bottom: 4px; }
+    .home__cycle { display: block; font-size: 44px; white-space: nowrap; }
+    .cycle-letter { display: inline-block; opacity: 0; filter: blur(6px); transition: opacity 320ms, filter 320ms; }
+    .cycle-letter.show { opacity: 1; filter: blur(0); }
+
+    /* modal */
+    .modal-backdrop { position: fixed; inset: 0; background: var(--color-scrim); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal-backdrop.show { display: flex; animation: bdIn 200ms ease-out both; }
+    .modal-backdrop { --color-scrim: rgba(31,26,46,0.25); backdrop-filter: blur(8px); }
+    .modal-card { width: 380px; background: var(--color-surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-modal); padding: 28px; text-align: center; }
+    .modal-backdrop.show .modal-card { animation: cardIn 280ms var(--ease-standard) 100ms both; }
+    .modal-card h3 { font-family: var(--font-title); font-weight: 500; margin: 0 0 6px; font-size: var(--text-3xl); text-align: center; }
+    .modal-card p { color: var(--color-ink-muted); margin: 0 0 14px; font-size: 14px; }
+    .modal-card input { width: 100%; padding: 14px 16px; border: none; outline: none; border-radius: var(--radius-md); background: rgba(31,26,46,0.04); font: inherit; font-size: 14px; color: var(--color-ink-deep); margin-bottom: 14px; }
+    .modal-card input:focus { background: rgba(31,26,46,0.07); }
+    .modal-card__actions { display: flex; justify-content: center; gap: 10px; }
+    @keyframes bdIn { from{opacity:0;} to{opacity:1;} }
+    @keyframes cardIn { from{opacity:0;transform:scale(.96);} to{opacity:1;transform:scale(1);} }
+
+    /* dropdown */
+    .kebab-popover { display: inline-block; transform-origin: top right; background: var(--color-surface); border-radius: var(--radius-input); box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px; animation: kebabIn 180ms var(--ease-pop) both; }
+    .kebab-popover button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 10px 14px; font-family: var(--font-body); font-size: var(--font-size-base); font-weight: var(--font-weight-medium); color: var(--color-ink-deep); border-radius: var(--radius-sm); cursor: pointer; }
+    .kebab-popover button:hover { background: rgba(31,26,46,0.05); }
+    @keyframes kebabIn { from{opacity:0;transform:scale(.94);} to{opacity:1;transform:scale(1);} }
+
+    /* insight paper */
+    .insight-paper { background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 28px; transform: rotate(-0.5deg); max-width: 640px; }
+    .insight-paper__body { display: flex; gap: 24px; }
+    .insight-paper__obs { flex: 1 1 60%; }
+    .insight-paper__obs p { font-size: 15px; line-height: 1.6; color: var(--color-ink-deep); margin: 0; }
+    .insight-paper__obs b { font-weight: 700; }
+    .insight-paper__obs .q { font-style: italic; color: var(--color-ink-faint); }
+    .insight-tip { position: relative; flex: 0 0 40%; background: rgba(244,164,122,0.08); border-radius: var(--radius-md); padding: 20px; }
+    .insight-tip p { margin: 0; font-size: 14px; line-height: 1.55; }
+
+    /* setup panel */
+    .setup-panel { width: 340px; padding: 22px; border-radius: var(--radius-2xl); background: rgba(255,255,255,0.55); backdrop-filter: blur(28px); border: .5px solid rgba(255,255,255,0.7); box-shadow: var(--shadow-modal); display: flex; flex-direction: column; gap: 18px; }
+    .setup-q { display: flex; flex-direction: column; gap: 9px; }
+    .setup-pills { display: flex; flex-wrap: wrap; gap: 7px; }
+    .setup-size { display: flex; align-items: center; gap: 12px; }
+    .setup-panel__start { width: 100%; border: none; background: var(--color-ink-deep); color: #fff; font-weight: 600; font-size: 15px; padding: 14px 18px; border-radius: var(--radius-sm); cursor: pointer; position: relative; overflow: hidden; z-index: 0; }
+    .setup-panel__start::after { content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(90deg,var(--color-aura-peach),var(--color-aura-pink)); transform:scaleX(0); transform-origin:left; transition:transform 380ms cubic-bezier(.65,0,.35,1); }
+    .setup-panel__start:hover::after { transform: scaleX(1); }
+
+    /* video card */
+    .vcard { width: 320px; aspect-ratio: 16/9; border-radius: var(--radius-lg); overflow: hidden; position: relative; background: var(--gradient-poster); }
+    .vcard__overlay { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px; background: linear-gradient(to top, rgba(0,0,0,.75) 0%, transparent 60%); }
+    .vcard__num { font-weight: 600; font-size: 16px; color: #fff; }
+    .vcard__meta { font-size: 12px; color: rgba(255,255,255,0.65); }
+
+    /* progress strip */
+    .pstrip { display: flex; gap: 8px; align-items: center; }
+    .ptick { width: 36px; height: 6px; border-radius: 999px; background: var(--color-ink-faint); }
+    .ptick.done { background: var(--color-ink-press); }
+  </style>
+</head>
+<body>
+  <nav class="sb-side">
+    <div class="sb-mark"><span class="sb-dot"></span> rehearsal</div>
+    <h4>Tokens</h4>
+    <a href="#colors">Colors</a><a href="#type">Typography</a><a href="#space">Spacing</a>
+    <a href="#radii">Radii</a><a href="#shadows">Shadows</a><a href="#blurs">Blurs</a>
+    <a href="#easing">Easing</a><a href="#durations">Durations</a>
+    <h4>Components</h4>
+    <a href="#logo">Logo</a><a href="#buttons">Buttons</a><a href="#glow">Glow button</a>
+    <a href="#card">Talk card</a><a href="#pill">Pill</a><a href="#slider">Slider</a>
+    <a href="#cycle">Cycling headline</a><a href="#modal">Modal</a><a href="#dropdown">Dropdown</a>
+    <a href="#paper">Insight paper</a><a href="#setup">Setup panel</a><a href="#video">Video card</a>
+    <a href="#progress">Progress strip</a>
+  </nav>
+
+  <main class="sb-main"><div class="sb-wrap">
+    <header class="sb-hero">
+      <h1>Rehearsal — Design System</h1>
+      <p>Live documentation of every token and component. Class names mirror production.</p>
+      <p class="mono">tokens: src/styles/tokens.css &nbsp;·&nbsp; this page: public/storybook.html</p>
+    </header>
+
+    <!-- ===== TOKENS ===== -->
+    <section id="colors"><h2>Colors</h2><p class="sb-sub">Backgrounds · Ink · Semantic · Glass · Aura</p>
+      <p class="label">Backgrounds</p>
+      <div class="grid swatches" id="sw-bg"></div>
+      <p class="label" style="margin-top:24px">Ink</p><div class="grid swatches" id="sw-ink"></div>
+      <p class="label" style="margin-top:24px">Semantic</p><div class="grid swatches" id="sw-sem"></div>
+      <p class="label" style="margin-top:24px">Glass</p><div class="grid swatches" id="sw-glass"></div>
+      <p class="label" style="margin-top:24px">Aura</p><div class="grid swatches" id="sw-aura"></div>
+    </section>
+
+    <section id="type"><h2>Typography</h2><p class="sb-sub">Anek Telugu (display) · Inter (body)</p>
+      <div id="type-display"></div>
+      <p class="label" style="margin-top:24px">Body — Inter</p><div id="type-body"></div>
+    </section>
+
+    <section id="space"><h2>Spacing</h2><p class="sb-sub">4px scale</p><div id="space-bars"></div></section>
+
+    <section id="radii"><h2>Radii</h2><div class="grid tiles" id="radii-grid"></div></section>
+
+    <section id="shadows"><h2>Shadows</h2><div class="grid tiles" id="shadow-grid"></div></section>
+
+    <section id="blurs"><h2>Blurs</h2><div class="grid tiles" id="blur-grid"></div></section>
+
+    <section id="easing"><h2>Easing</h2><p class="sb-sub">Dots loop continuously</p><div id="ease-grid"></div></section>
+
+    <section id="durations"><h2>Durations</h2><p class="sb-sub">Hover to scale + rotate</p><div class="row" id="dur-grid"></div></section>
+
+    <!-- ===== COMPONENTS ===== -->
+    <section id="logo"><h2>Logo</h2>
+      <div class="stage"><button class="app-logo"><span class="app-logo__dot"></span><span class="app-logo__word">rehearsal</span></button></div>
+    </section>
+
+    <section id="buttons"><h2>Buttons</h2><p class="sb-sub">Primary pills wipe peach→pink on hover · secondary is outlined in ink-deep</p>
+      <div class="stage row">
+        <button class="btn btn--pill">Create</button>
+        <button class="btn btn--pill">Rehearse again</button>
+        <button class="btn btn--ghost btn--pill">Cancel</button>
+      </div>
+    </section>
+
+    <section id="glow"><h2>Glow button</h2><p class="sb-sub">Click for the two-blob aura swirl (peach leads, pink follows)</p>
+      <div class="stage stage--warm row" style="gap:40px;justify-content:center;padding:48px">
+        <span class="glow-host"><span class="glow-wash"></span><button class="glow-btn" data-glow>+</button></span>
+        <span class="glow-host"><span class="glow-wash"></span><button class="glow-btn" data-glow style="width:88px;height:88px;font-size:15px">Start</button></span>
+      </div>
+    </section>
+
+    <section id="card"><h2>Talk card · liquid glass</h2><p class="sb-sub">0 / 1 / 5 rehearsals on the warm gradient</p>
+      <div class="stage stage--warm row" style="gap:24px">
+        <div class="talk-card"><div><div class="talk-card__name">First talk</div><div class="talk-card__meta">tap the + below</div></div>
+          <div class="talk-card__pile"><div class="talk-card__doc talk-card__doc--empty" style="display:flex;align-items:center;justify-content:center;text-align:center"><span style="font-family:var(--font-title);font-size:16px;color:var(--color-ink-muted)">Here will be your first talk</span></div></div></div>
+        <div class="talk-card"><div><div class="talk-card__name">Q3 board pitch</div><div class="talk-card__meta">1 rehearsal · last 11/15</div></div>
+          <div class="talk-card__pile"><div class="talk-card__doc"></div><button class="talk-card__rehearse">Rehearse</button></div></div>
+        <div class="talk-card"><div><div class="talk-card__name">Team standup</div><div class="talk-card__meta">5 rehearsals · last 11/16</div></div>
+          <div class="talk-card__pile"><div class="talk-card__doc talk-card__doc--b2"></div><div class="talk-card__doc talk-card__doc--b1"></div><div class="talk-card__doc"></div><button class="talk-card__rehearse">Rehearse</button></div></div>
+      </div>
+    </section>
+
+    <section id="pill"><h2>Pill</h2><p class="sb-sub">Default · selected (tab underline) · ghost</p>
+      <div class="stage row"><button class="pill">Meeting room</button><button class="pill pill--selected">Your space</button><button class="pill">Town hall</button></div>
+    </section>
+
+    <section id="slider"><h2>Slider</h2>
+      <div class="stage" style="display:flex;flex-direction:column;gap:18px;max-width:360px">
+        <div class="seg-slider"><div class="setup-q"><span class="label">How many?</span><div class="setup-size"><input type="range" min="1" max="100" value="30" style="--fill:30%" oninput="this.style.setProperty('--fill',(this.value-this.min)/(this.max-this.min)*100+'%');this.nextElementSibling.textContent=this.value+' people'"><span class="seg-slider__value">30 people</span></div></div></div>
+        <div class="seg-slider"><div class="setup-q"><span class="label">Warmth?</span><div class="setup-size"><input type="range" min="0" max="100" value="70" style="--fill:70%" oninput="this.style.setProperty('--fill',(this.value-this.min)/(this.max-this.min)*100+'%')"><span class="seg-slider__value">Warm</span></div></div></div>
+      </div>
+    </section>
+
+    <section id="cycle"><h2>Cycling headline</h2><p class="sb-sub">Auto-cycles every 3.5s, letter-by-letter blur</p>
+      <div class="stage" style="padding:48px"><h2 class="home__headline" style="margin:0"><span class="home__headline-prefix">Let’s train your</span><span class="home__cycle" id="cycle"></span></h2></div>
+    </section>
+
+    <section id="modal"><h2>Modal</h2><p class="sb-sub">Delayed entry · centered text + buttons</p>
+      <div class="stage"><button class="btn btn--pill" onclick="document.getElementById('sbModal').classList.add('show')">Open “Name your talk”</button></div>
+      <div class="modal-backdrop" id="sbModal" onclick="if(event.target===this)this.classList.remove('show')">
+        <div class="modal-card"><h3>Name your talk</h3><p>What are you rehearsing for?</p>
+          <input placeholder="e.g. Q3 Board Pitch"><div class="modal-card__actions">
+          <button class="btn btn--ghost btn--pill" onclick="document.getElementById('sbModal').classList.remove('show')">Cancel</button>
+          <button class="btn btn--pill">Create</button></div></div></div>
+    </section>
+
+    <section id="dropdown"><h2>Dropdown</h2><p class="sb-sub">Both items single ink — no destructive red</p>
+      <div class="stage"><div class="kebab-popover" role="menu"><button>Rename</button><button>Delete</button></div></div>
+    </section>
+
+    <section id="paper"><h2>Insight paper</h2>
+      <div class="stage" style="background:var(--color-bg-sunken)"><article class="insight-paper"><div class="label" style="margin-bottom:12px">Insight #3</div>
+        <div class="insight-paper__body"><div class="insight-paper__obs"><p>By <b>rehearsal #3</b> your voice holds steadier — fillers settled to <b>2/min</b>. Around <span class="q">“…the data tells a clear story…”</span> at <b>0:12</b> you let the line breathe ✨.</p></div>
+        <aside class="insight-tip"><div class="label" style="margin-bottom:8px">Pay attention</div><p>Keep the same grounded stance — and push it one notch further.</p></aside></div></article></div>
+    </section>
+
+    <section id="setup"><h2>Setup right-side panel</h2>
+      <div class="stage stage--room" style="display:flex;justify-content:flex-end;padding:32px">
+        <aside class="setup-panel">
+          <div class="setup-q"><span class="label">Where?</span><div class="setup-pills"><button class="pill pill--selected">Meeting room</button><button class="pill">Your space</button><button class="pill">Town hall</button></div></div>
+          <div class="setup-q"><span class="label">How many?</span><div class="setup-size"><input type="range" min="1" max="100" value="12" style="flex:1;--fill:11%" oninput="this.style.setProperty('--fill',(this.value-this.min)/(this.max-this.min)*100+'%')"><span class="seg-slider__value">12 people</span></div></div>
+          <div class="setup-q"><span class="label">Warmth?</span><div class="setup-pills"><button class="pill">Skeptical</button><button class="pill pill--selected">Neutral</button><button class="pill">Warm</button></div></div>
+          <div class="setup-q"><span class="label">Attention?</span><div class="setup-pills"><button class="pill">Distracted</button><button class="pill pill--selected">Focused</button><button class="pill">Engaged</button></div></div>
+          <button class="setup-panel__start">Start rehearsal →</button>
+        </aside>
+      </div>
+    </section>
+
+    <section id="video"><h2>Video preview card</h2><p class="sb-sub">Edge-to-edge image · bottom gradient + text, no shadow</p>
+      <div class="stage stage--room"><div class="vcard"><div class="vcard__overlay"><div class="vcard__num">Rehearsal #3 · Demo video</div><div class="vcard__meta">no recording for this rehearsal</div></div></div></div>
+    </section>
+
+    <section id="progress"><h2>Progress strip</h2>
+      <div class="stage"><div class="pstrip"><span class="ptick done"></span><span class="ptick done"></span><span class="ptick done"></span><span class="ptick"></span><span class="ptick"></span></div></div>
+    </section>
+
+  </div></main>
+
+  <script>
+    const css = getComputedStyle(document.documentElement);
+    const tok = n => css.getPropertyValue(n).trim();
+    function swatch(host, name){ const v = tok(name); const el = document.createElement('div'); el.className='swatch';
+      el.innerHTML = `<div class="chip"><i style="background:${v}"></i></div><div class="meta"><b>${name}</b><span>${v}</span></div>`; document.getElementById(host).appendChild(el); }
+    ['--color-bg','--color-surface','--color-bg-sunken'].forEach(n=>swatch('sw-bg',n));
+    ['--color-ink-deep','--color-ink-press','--color-ink-muted','--color-ink-faint','--color-line'].forEach(n=>swatch('sw-ink',n));
+    ['--color-sage','--color-copper','--color-record','--color-bulb'].forEach(n=>swatch('sw-sem',n));
+    ['--color-glass-bg','--color-glass-border','--color-scrim-fill','--color-scrim-border'].forEach(n=>swatch('sw-glass',n));
+    ['--color-aura-purple','--color-aura-pink','--color-aura-peach'].forEach(n=>swatch('sw-aura',n));
+
+    // typography
+    const disp = document.getElementById('type-display');
+    [['--text-display-xl',96],['--text-display-lg',62],['--text-display-md',48],['--text-display-sm',36],['--text-3xl',28],['--font-size-xl',20]].forEach(([n,px])=>{
+      const r=document.createElement('div'); r.className='typerow';
+      r.innerHTML=`<span class="mono">${n} · ${px}px</span><span style="font-family:var(--font-title);font-weight:500;font-size:${px}px;line-height:1.05">Train your speech</span>`; disp.appendChild(r); });
+    const bod=document.getElementById('type-body');
+    [['--font-size-lg',16],['--font-size-md',14],['--font-size-sm',12],['--font-size-2xs',10]].forEach(([n,px])=>{
+      const r=document.createElement('div'); r.className='typerow';
+      r.innerHTML=`<span class="mono">${n} · ${px}px</span><span style="font-family:var(--font-body);font-size:${px}px">The quick brown fox jumps over the lazy dog.</span>`; bod.appendChild(r); });
+
+    // spacing
+    const sb=document.getElementById('space-bars');
+    [1,2,3,4,5,6,7,8].forEach(k=>{ const v=tok('--space-'+k); const r=document.createElement('div'); r.className='spacebar';
+      r.innerHTML=`<span class="mono">--space-${k} · ${v}</span><i style="width:${v}"></i>`; sb.appendChild(r); });
+
+    // radii
+    const rg=document.getElementById('radii-grid');
+    ['--radius-xs','--radius-sm','--radius-md','--radius-input','--radius-lg','--radius-xl','--radius-2xl','--radius-card','--radius-pill'].forEach(n=>{
+      const v=tok(n); const t=document.createElement('div'); t.className='radiitile'; t.style.borderRadius=v;
+      t.innerHTML=`<span>${n}<br>${v}</span>`; rg.appendChild(t); });
+
+    // shadows
+    const sg=document.getElementById('shadow-grid');
+    ['--shadow-soft','--shadow-card','--shadow-pop','--shadow-lg','--shadow-lift','--shadow-modal'].forEach(n=>{
+      const t=document.createElement('div'); t.className='shadowtile'; t.style.boxShadow=tok(n); t.innerHTML=`<span>${n}</span>`; sg.appendChild(t); });
+
+    // blurs
+    const bg=document.getElementById('blur-grid');
+    ['--blur-sm','--blur-md','--blur-lg','--blur-glass'].forEach(n=>{
+      const t=document.createElement('div'); t.className='blurtile';
+      t.innerHTML=`<div style="position:absolute;inset:0;background:var(--gradient-warm)"></div><div class="glass" style="backdrop-filter:blur(${tok(n)});-webkit-backdrop-filter:blur(${tok(n)});background:rgba(255,255,255,.15)"></div><span style="position:relative">${n} · ${tok(n)}</span>`;
+      bg.appendChild(t); });
+
+    // easing — looping dots
+    const eg=document.getElementById('ease-grid');
+    ['--ease-standard','--ease-pop','--ease-ripple','--ease-march'].forEach((n,i)=>{
+      const wrap=document.createElement('div'); wrap.innerHTML=`<div class="mono" style="margin:4px 0">${n} · ${tok(n)}</div>`;
+      const track=document.createElement('div'); track.className='easetrack'; const dot=document.createElement('i'); track.appendChild(dot); wrap.appendChild(track); eg.appendChild(wrap);
+      const kf=[{left:'6px'},{left:'calc(100% - 34px)'}]; dot.animate(kf,{duration:1600,iterations:Infinity,direction:'alternate',easing:tok(n)}); });
+
+    // durations
+    const dg=document.getElementById('dur-grid');
+    ['--dur-fast','--dur-base','--dur-slow'].forEach(n=>{ const b=document.createElement('div'); b.className='durbox'; b.style.transition=`transform ${tok(n)} var(--ease-standard)`; b.textContent=`${n.replace('--dur-','')} ${tok(n)}`; dg.appendChild(b); });
+
+    // glow swirl — two aura blobs, peach leads (0ms), pink follows (80ms)
+    document.querySelectorAll('[data-glow]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ const wash=btn.parentElement.querySelector('.glow-wash');
+        [['peach','glowSwirlPeach',2100,0],['pink','glowSwirlPink',2100,80]].forEach(b=>{
+          const el=document.createElement('div');
+          el.className='glow-blob glow-blob--'+b[0];
+          el.style.animation=b[1]+' '+b[2]+'ms cubic-bezier(0.2,0.7,0.4,1) '+b[3]+'ms forwards';
+          wash.appendChild(el);
+          setTimeout(()=>el.remove(), 2700);
+        });
+      }); });
+
+    // cycling headline
+    const WORDS=['speech','pitch','keynote','wedding toast','TED talk','interview'];
+    const cyc=document.getElementById('cycle'); let wi=0;
+    function render(word, show){ cyc.innerHTML=''; [...word].forEach((ch,i)=>{ const s=document.createElement('span'); s.className='cycle-letter'+(show?' show':''); s.textContent=ch===' '?' ':ch; s.style.transitionDelay=(i*60)+'ms'; cyc.appendChild(s); }); }
+    function cycle(){ render(WORDS[wi],false); requestAnimationFrame(()=>requestAnimationFrame(()=>cyc.querySelectorAll('.cycle-letter').forEach(l=>l.classList.add('show'))));
+      setTimeout(()=>{ cyc.querySelectorAll('.cycle-letter').forEach(l=>l.classList.remove('show')); }, 3000);
+      setTimeout(()=>{ wi=(wi+1)%WORDS.length; cycle(); }, 3500); }
+    cycle();
+  </script>
+</body>
+</html>

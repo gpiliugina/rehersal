@@ -1,25 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
+import { useGlowWash } from '../components/Ripple';
+import { Modal, ConfirmDialog } from '../components/Modal';
 import { relativeTime } from '../lib/format';
 import type { Event } from '../state/types';
-import { ScreenTitle } from '../components/ScreenTitle';
 
-const ROOM_LABELS: Record<string, string> = {
-  meetingRoom: 'Meeting room',
-  yourSpace: 'Your space',
-  conferenceStage: 'Conference stage',
-  smallHuddle: 'Small huddle',
-  townHall: 'Town hall',
-};
-const WARMTH_WORDS = ['Skeptical', 'Reserved', 'Neutral', 'Warm', 'Friendly'];
-const ATTENTION_WORDS = ['Distracted', 'Drifting', 'Listening', 'Focused', 'Engaged'];
-function bucketWord(value: number, words: string[]): string {
-  const idx = Math.min(
-    words.length - 1,
-    Math.max(0, Math.floor(value * words.length)),
-  );
-  return words[idx];
-}
+// The trailing word of the headline cycles through these. Only this word
+// animates (per-letter blur-fade); the march of the talk cards is synced to it.
+const CYCLE_WORDS = [
+  'speech',
+  'pitch',
+  'keynote',
+  'wedding toast',
+  'TED talk',
+  'board meeting',
+  'interview',
+  'presentation',
+  'demo',
+];
+const LETTER_STAGGER = 65; // ms between letters
+const LETTER_DUR = 320; // ms per letter
+const HOLD_MS = 2600; // fully-visible hold before the word cycles
+const GAP_MS = 150; // empty gap between words
+const SCROLL_THROTTLE = 900; // min ms between scroll-driven card advances
+
+const mod = (a: number, m: number) => ((a % m) + m) % m;
 
 export function Home() {
   const events = useStore((s) => s.events);
@@ -30,416 +35,387 @@ export function Home() {
 
   const [modalOpen, setModalOpen] = useState(false);
 
-  return (
-    <div className="screen home">
-      <div className="home__brand">
-        <span className="logo__dot" /> Rehearsal
-      </div>
-      <ScreenTitle hero>Let’s train your speech.</ScreenTitle>
+  // The card march is scroll-driven only. dir carries the scroll direction so
+  // the cascade leads from the correct side. (The cycling word runs on its own
+  // independent loop — see <CyclingWord> — and is NOT synced to the cards.)
+  const [step, setStep] = useState(0);
+  const [dir, setDir] = useState(1);
+  const wheelAtRef = useRef(0);
 
-      <TalksCarousel
-        events={events}
-        onNewTalk={() => setModalOpen(true)}
-        onRehearseAgain={(id) => rehearseAgain(id)}
-        onOpenProgress={(id) => openProgress(id)}
-        onRename={(id, name) => renameEvent(id, name)}
-        onDelete={(id) => deleteEvent(id)}
-      />
+  // Scroll advances the cards forward / back, throttled.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const now = performance.now();
+      if (now - wheelAtRef.current < SCROLL_THROTTLE) return;
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (Math.abs(delta) < 2) return;
+      wheelAtRef.current = now;
+      const d = delta > 0 ? 1 : -1;
+      setDir(d);
+      setStep((s) => s + d);
+    };
+    window.addEventListener('wheel', onWheel, { passive: true });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, []);
+
+  return (
+    <div className="screen home settle-in">
+      {/* Ambient aura — two slowly orbiting blobs behind all content (z0). */}
+      <div className="home-aura" aria-hidden="true">
+        <span className="home-aura__blob home-aura__blob--peach" />
+        <span className="home-aura__blob home-aura__blob--pink" />
+      </div>
+
+      {/* Wordmark is rendered globally as <Logo /> (top-left on every page). */}
+      <h1 className="home__headline">
+        <span className="home__headline-prefix">Let’s train your</span>
+        <CyclingWord />
+      </h1>
+
+      {events.length > 0 && (
+        <TalkGallery
+          events={events}
+          step={step}
+          dir={dir}
+          onOpenProgress={(id) => openProgress(id)}
+          onRehearse={(id) => rehearseAgain(id)}
+          onRename={(id, name) => renameEvent(id, name)}
+          onDelete={(id) => deleteEvent(id)}
+        />
+      )}
+
+      {/* "+ New" stays bottom-centre in BOTH states (same coords + size). */}
+      <PlusButton onClick={() => setModalOpen(true)} />
 
       {modalOpen && <NameTalkModal onClose={() => setModalOpen(false)} />}
     </div>
   );
 }
 
-// ====== TalksCarousel ====================================================
-
-interface CarouselProps {
-  events: Event[];
-  onNewTalk: () => void;
-  onRehearseAgain: (id: string) => void;
-  onOpenProgress: (id: string) => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
 }
 
-function TalksCarousel({
-  events,
-  onNewTalk,
-  onRehearseAgain,
-  onOpenProgress,
-  onRename,
-  onDelete,
-}: CarouselProps) {
-  // The carousel is: [NewTalk card] + [talks newest → oldest]. Events are
-  // already stored newest-first, so we just prepend the new-talk slot.
-  const itemCount = 1 + events.length;
-  const [focusedIndex, setFocusedIndex] = useState(0);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const rafIdRef = useRef<number | null>(null);
-  // Pointer-drag state: when the user click-drags the strip horizontally, we
-  // manipulate scrollLeft directly. Threshold suppresses the click that
-  // browsers fire after a drag so cards don't activate on release.
-  const dragRef = useRef<{ x: number; scrollLeft: number; moved: boolean } | null>(null);
-  const justDraggedRef = useRef(false);
-
-  function scrollToIndex(i: number) {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const clamped = Math.max(0, Math.min(itemCount - 1, i));
-    const card = strip.children[clamped] as HTMLElement | undefined;
-    if (!card) return;
-    card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    setFocusedIndex(clamped);
-  }
-
-  /** Click on a peek card → snap it to centre. Click on the focused card
-   *  passes through to its inner buttons. Drag-released clicks are ignored. */
-  function onSlotClick(slotIndex: number) {
-    if (justDraggedRef.current) return;
-    if (slotIndex !== focusedIndex) scrollToIndex(slotIndex);
-  }
-
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const strip = stripRef.current;
-    if (!strip) return;
-    dragRef.current = {
-      x: e.clientX,
-      scrollLeft: strip.scrollLeft,
-      moved: false,
-    };
-  }
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    const d = dragRef.current;
-    const strip = stripRef.current;
-    if (!d || !strip) return;
-    const dx = e.clientX - d.x;
-    if (!d.moved && Math.abs(dx) > 6) {
-      d.moved = true;
-      // Take pointer capture so the drag survives leaving the strip.
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    }
-    if (d.moved) {
-      strip.scrollLeft = d.scrollLeft - dx;
-    }
-  }
-  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (!d) return;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    if (!d.moved) return;
-    // Drag ended — suppress the synthetic click and snap to the closest card.
-    justDraggedRef.current = true;
-    setTimeout(() => { justDraggedRef.current = false; }, 80);
-    const strip = stripRef.current;
-    if (!strip) return;
-    const center = strip.scrollLeft + strip.clientWidth / 2;
-    let best = 0;
-    let bestD = Infinity;
-    Array.from(strip.children).forEach((el, i) => {
-      const c = (el as HTMLElement).offsetLeft + (el as HTMLElement).offsetWidth / 2;
-      const dist = Math.abs(c - center);
-      if (dist < bestD) { bestD = dist; best = i; }
-    });
-    scrollToIndex(best);
-  }
-
-  // Update focused index from scroll position (whichever card sits closest
-  // to the viewport center wins).
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    function recompute() {
-      const strip = stripRef.current;
-      if (!strip) return;
-      const center = strip.scrollLeft + strip.clientWidth / 2;
-      let best = 0;
-      let bestD = Infinity;
-      Array.from(strip.children).forEach((el, i) => {
-        const c = (el as HTMLElement).offsetLeft + (el as HTMLElement).offsetWidth / 2;
-        const d = Math.abs(c - center);
-        if (d < bestD) {
-          bestD = d;
-          best = i;
-        }
-      });
-      setFocusedIndex(best);
-    }
-    function onScroll() {
-      if (rafIdRef.current != null) return;
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
-        recompute();
-      });
-    }
-    strip.addEventListener('scroll', onScroll, { passive: true });
-    // Initial compute (in case of resize / mount).
-    recompute();
-    return () => {
-      strip.removeEventListener('scroll', onScroll);
-      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
-    };
-  }, [itemCount]);
-
-  // Keyboard navigation: ← → moves between cards.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      // Don't hijack arrows while the user is editing text somewhere.
-      const tag = (document.activeElement?.tagName ?? '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        scrollToIndex(focusedIndex - 1);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        scrollToIndex(focusedIndex + 1);
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedIndex, itemCount]);
-
-  // Re-snap the focused card after a resize (the centering padding changes).
-  useEffect(() => {
-    function onResize() {
-      scrollToIndex(focusedIndex);
-    }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedIndex]);
-
-  const positionLabel =
-    focusedIndex === 0
-      ? events.length === 0
-        ? '' // empty state: the "+ New talk" card speaks for itself
-        : `Add a new talk · ${events.length} ${events.length === 1 ? 'talk' : 'talks'} below`
-      : `Talk ${focusedIndex} of ${events.length}`;
-
-  const atStart = focusedIndex === 0;
-  const atEnd = focusedIndex === itemCount - 1;
-
+// "+ New" button (bottom-centre). Clicking blooms the 3-wave glow wash out
+// from the button centre. The button itself never moves.
+function PlusButton({ onClick }: { onClick: () => void }) {
+  const { layer, spawn } = useGlowWash();
   return (
-    <div className="talks-carousel">
+    <div className="home__plus-wrap">
+      {layer}
       <button
-        className={`carousel-nav carousel-nav--left ${atStart ? 'is-disabled' : ''}`}
-        onClick={() => scrollToIndex(focusedIndex - 1)}
-        disabled={atStart}
-        aria-label="Previous talk"
+        className="home__plus"
+        onClick={(e) => {
+          spawn(e);
+          onClick();
+        }}
+        aria-label="New talk"
       >
-        <ChevronLeftIcon />
+        <PlusIcon />
       </button>
-
-      <div
-        className="carousel-strip"
-        ref={stripRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      >
-        <div
-          className={`carousel-card ${focusedIndex === 0 ? 'is-focused' : ''}`}
-          onClick={() => onSlotClick(0)}
-        >
-          <NewTalkCard onClick={onNewTalk} />
-        </div>
-        {events.map((ev, i) => {
-          const slotIndex = i + 1;
-          return (
-            <div
-              key={ev.id}
-              className={`carousel-card ${focusedIndex === slotIndex ? 'is-focused' : ''}`}
-              onClick={() => onSlotClick(slotIndex)}
-            >
-              <TalkCard
-                event={ev}
-                onRehearseAgain={() => onRehearseAgain(ev.id)}
-                onOpenProgress={() => onOpenProgress(ev.id)}
-                onRename={(name) => onRename(ev.id, name)}
-                onDelete={() => onDelete(ev.id)}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      <button
-        className={`carousel-nav carousel-nav--right ${atEnd ? 'is-disabled' : ''}`}
-        onClick={() => scrollToIndex(focusedIndex + 1)}
-        disabled={atEnd}
-        aria-label="Next talk"
-      >
-        <ChevronRightIcon />
-      </button>
-
-      <div className="carousel-indicator muted small">{positionLabel}</div>
     </div>
   );
 }
 
-// Tiny camera glyph marking a talk that has at least one recorded rehearsal.
-function RecDot() {
+// ====== Cycling last word ================================================
+// "Let's train your ___" — only the trailing word animates: a staggered,
+// per-letter blur-fade on entrance + exit. Self-contained: it loops on its OWN
+// timer, independent of the card march (they are not synced).
+
+function CyclingWord() {
+  const [index, setIndex] = useState(0);
+  const [shown, setShown] = useState(false); // target: letters visible?
+  const [easing, setEasing] = useState<'ease-out' | 'ease-in'>('ease-out');
+
+  const word = CYCLE_WORDS[index];
+  const words = word.split(' ');
+  const letterCount = word.replace(/ /g, '').length;
+
+  useEffect(() => {
+    const stagger = (letterCount - 1) * LETTER_STAGGER;
+    const enterDur = stagger + LETTER_DUR;
+    const exitDur = stagger + LETTER_DUR;
+    const timers: number[] = [];
+
+    // Entrance: start hidden (ease-out), then flip to shown next frame.
+    setEasing('ease-out');
+    setShown(false);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setShown(true));
+    });
+
+    // After entrance + hold → exit (ease-in, staggered blur-out).
+    timers.push(
+      window.setTimeout(() => {
+        setEasing('ease-in');
+        setShown(false);
+      }, enterDur + HOLD_MS),
+    );
+    // After exit + gap → advance to the next word (loops forever).
+    timers.push(
+      window.setTimeout(() => {
+        setIndex((i) => (i + 1) % CYCLE_WORDS.length);
+      }, enterDur + HOLD_MS + exitDur + GAP_MS),
+    );
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index]);
+
+
+  // Each word is a no-wrap unit (letters never break mid-word); phrases keep a
+  // normal space between units. The blur stagger uses a continuous left-to-right
+  // index across the whole phrase.
+  let gi = 0;
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M15 10l4.553 -2.276A1 1 0 0 1 21 8.618v6.764a1 1 0 0 1 -1.447 .894L15 14v-4z" />
-      <rect x="3" y="6" width="12" height="12" rx="2" />
-    </svg>
+    <span className="home__cycle" aria-label={word}>
+      {words.map((w, wi) => {
+        const unit = (
+          <span className="home__cycle-word" aria-hidden>
+            {[...w].map((ch) => {
+              const i = gi++;
+              // Entrance staggers left-to-right; exit staggers right-to-left
+              // (the word disappears from its end).
+              const delay =
+                easing === 'ease-in'
+                  ? (letterCount - 1 - i) * LETTER_STAGGER
+                  : i * LETTER_STAGGER;
+              return (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-block',
+                    opacity: shown ? 1 : 0,
+                    filter: shown ? 'blur(0px)' : 'blur(6px)',
+                    transition: `opacity ${LETTER_DUR}ms ${easing} ${delay}ms, filter ${LETTER_DUR}ms ${easing} ${delay}ms`,
+                  }}
+                >
+                  {ch}
+                </span>
+              );
+            })}
+          </span>
+        );
+        return wi === 0 ? (
+          <Fragment key={wi}>{unit}</Fragment>
+        ) : (
+          <Fragment key={wi}> {unit}</Fragment>
+        );
+      })}
+    </span>
   );
 }
 
-function ChevronLeftIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M15 6l-6 6 6 6" />
-    </svg>
-  );
-}
-function ChevronRightIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 6l6 6 -6 6" />
-    </svg>
-  );
-}
+// ====== Arch gallery =====================================================
+// Talk cards ride a symmetric arch: off-screen low-left → rise → peak centre →
+// descend → off-screen low-right, across 7 slots (0 and 6 are off-screen
+// buffers; 1–5 are visible). The `step` (scroll-driven from Home) advances
+// every card one slot to the right with a right-to-left cascade; the card
+// crossing the 6↔0 wrap teleports with no transition that frame.
 
-// ====== NewTalkCard =======================================================
-
-function NewTalkCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button className="newtalk-card" onClick={onClick}>
-      <div className="newtalk-card__inner">
-        <span className="newtalk-card__plus" aria-hidden>
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-        </span>
-        <span className="newtalk-card__label">New talk</span>
-      </div>
-    </button>
-  );
+interface CarouselProps {
+  events: Event[];
+  step: number;
+  dir: number;
+  onOpenProgress: (id: string) => void;
+  onRehearse: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
 }
 
-// ====== TalkCard (unchanged shape, lives inside a carousel slot) ==========
+// 7 arch slots — card centre as a % of the viewport (x across, y down) plus a
+// per-slot scale. The peak (slot 3) is biggest; edges shrink. Tight x spacing
+// (~16%) makes neighbours lightly overlap.
+const ARCH = [
+  { x: -8, y: 90, scale: 0.45, blur: 4, opacity: 0 }, // 0 — off-screen left, low
+  { x: 18, y: 80, scale: 0.64, blur: 3, opacity: 1 }, // 1 — left edge, low (blurred, a bit bigger)
+  { x: 35, y: 71, scale: 0.78, blur: 0, opacity: 1 }, // 2 — left mid, rising
+  { x: 50, y: 65, scale: 1.0, blur: 0, opacity: 1 }, // 3 — PEAK (top of arch)
+  { x: 65, y: 71, scale: 0.78, blur: 0, opacity: 1 }, // 4 — right mid, descending
+  { x: 82, y: 80, scale: 0.64, blur: 3, opacity: 1 }, // 5 — right edge, low (blurred, a bit bigger)
+  { x: 108, y: 90, scale: 0.45, blur: 4, opacity: 0 }, // 6 — off-screen right, low
+];
+const LANES = [0, 1, 2, 3, 4, 5, 6];
+const CARD_MS = 750;
+const EASE = 'cubic-bezier(0.55, 0, 0.7, 0.95)';
 
-interface TalkCardProps {
+function TalkGallery({
+  events,
+  step,
+  dir,
+  onOpenProgress,
+  onRehearse,
+  onRename,
+  onDelete,
+}: CarouselProps) {
+  const n = events.length;
+
+  // Remember the previous step so we can spot the 6↔0 wrap and kill the
+  // transition for that single teleport frame.
+  const prevStepRef = useRef(step);
+  const prevStep = prevStepRef.current;
+  useEffect(() => {
+    prevStepRef.current = step;
+  });
+
+  return (
+    <div className="home__gallery">
+      {LANES.map((lane) => {
+        const slot = mod(lane + step, 7);
+        const prevSlot = mod(lane + prevStep, 7);
+        const teleported = Math.abs(slot - prevSlot) > 1;
+        // Cascade leads from the side the scroll moves toward: forward → the
+        // rightmost (slot 6) leads; backward → the leftmost (slot 0) leads.
+        const delayMs = (dir >= 0 ? 6 - slot : slot) * 100;
+        const a = ARCH[slot];
+        const visible = a.opacity === 1;
+        const style: React.CSSProperties = {
+          left: `${a.x}%`,
+          top: `${a.y}%`,
+          transform: `translate(-50%, -50%) scale(${a.scale})`,
+          opacity: a.opacity,
+          // Edge cards (slots 1 & 5) are softly blurred so the peak reads sharpest.
+          filter: a.blur > 0.05 ? `blur(${a.blur}px)` : 'none',
+          transition: teleported
+            ? 'none'
+            : `left ${CARD_MS}ms ${EASE} ${delayMs}ms, top ${CARD_MS}ms ${EASE} ${delayMs}ms, transform ${CARD_MS}ms ${EASE} ${delayMs}ms, filter ${CARD_MS}ms ${EASE} ${delayMs}ms, opacity ${CARD_MS}ms ${EASE} ${delayMs}ms`,
+          // Bigger (peak) cards sit on top so they overlap their neighbours.
+          zIndex: Math.round(a.scale * 100),
+          pointerEvents: visible ? 'auto' : 'none',
+        };
+        // The card carries its talk as it marches; content only changes
+        // off-screen at the wrap.
+        const ev = events[mod(step - slot + 1, n)];
+        return (
+          <TalkSheet
+            key={lane}
+            event={ev}
+            isActive={false}
+            style={style}
+            onCardClick={() => onOpenProgress(ev.id)}
+            onRehearse={() => onRehearse(ev.id)}
+            onRename={(name) => onRename(ev.id, name)}
+            onDelete={() => onDelete(ev.id)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ====== Talk card — rehearsal pile inside ================================
+
+interface TalkSheetProps {
   event: Event;
-  onRehearseAgain: () => void;
-  onOpenProgress: () => void;
+  isActive: boolean;
+  style: React.CSSProperties;
+  onCardClick: () => void;
+  onRehearse: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
 }
 
-function TalkCard({
-  event,
-  onRehearseAgain,
-  onOpenProgress,
-  onRename,
-  onDelete,
-}: TalkCardProps) {
-  const hasSessions = event.sessions.length > 0;
-  const totalSessions = event.sessions.length;
-  const latest = event.sessions[0];
-  const setup = event.homeSetup;
-  const anyRecorded = event.sessions.some((s) => s.hasRecording);
-
-  const peekBack1 = totalSessions >= 2;
-  const peekBack2 = totalSessions >= 3;
-
+function TalkSheet({ event, isActive, style, onCardClick, onRehearse, onRename, onDelete }: TalkSheetProps) {
   const [renaming, setRenaming] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const total = event.sessions.length;
+  const latest = event.sessions[0];
+  const docs = event.sessions.slice(0, 3); // newest-first
+  const meta =
+    total > 0
+      ? `${total} ${total === 1 ? 'rehearsal' : 'rehearsals'} · last ${relativeTime(latest.createdAt)}`
+      : 'no rehearsals yet';
+  const ps = (s?: typeof latest): React.CSSProperties | undefined =>
+    s?.posterDataUrl
+      ? { backgroundImage: `url(${s.posterDataUrl}), linear-gradient(135deg, #4a4350 0%, #2c303d 100%)` }
+      : undefined;
 
   return (
-    <article className="talk-card">
-      <header className="talk-card__head">
-        <div className="talk-card__head-row">
+    <div
+      className="ecard"
+      style={style}
+      onClick={onCardClick}
+      title={isActive ? 'See progress' : event.name}
+    >
+      <div className="ecard__head">
+        <div className="ecard__head-text">
           {renaming ? (
-            <InlineRenameField
-              value={event.name}
-              onSave={(name) => {
-                onRename(name);
-                setRenaming(false);
-              }}
-              onCancel={() => setRenaming(false)}
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <InlineRenameField
+                value={event.name}
+                onSave={(name) => {
+                  onRename(name);
+                  setRenaming(false);
+                }}
+                onCancel={() => setRenaming(false)}
+              />
+            </div>
           ) : (
-            <h4 className="talk-card__name">{event.name}</h4>
+            <span className="ecard__name">{event.name}</span>
           )}
+          <span className="ecard__meta">{meta}</span>
+        </div>
+        <div className="ecard__kebab" onClick={(e) => e.stopPropagation()}>
           <KebabMenu
             onRename={() => setRenaming(true)}
             onDelete={() => setConfirmingDelete(true)}
           />
         </div>
-        <div className="talk-card__sub muted small">
-          {hasSessions
-            ? `${totalSessions} ${totalSessions === 1 ? 'rehearsal' : 'rehearsals'} · last ${relativeTime(latest.createdAt)}`
-            : 'no rehearsals yet'}
-          {anyRecorded && (
-            <span className="rec-badge rec-badge--card" title="Has recordings">
-              <RecDot /> recorded
-            </span>
-          )}
-        </div>
-      </header>
-
-      <div className={`talk-pile-wrap ${peekBack1 ? 'has-back1' : ''} ${peekBack2 ? 'has-back2' : ''}`}>
-        {hasSessions ? (
-          <>
-            {peekBack2 && <div className="talk-pile__back talk-pile__back--2" aria-hidden />}
-            {peekBack1 && <div className="talk-pile__back talk-pile__back--1" aria-hidden />}
-            <button
-              className="talk-pile__front"
-              onClick={onOpenProgress}
-              aria-label={`Open progress for ${event.name}`}
-              title="See progress"
-              style={
-                latest?.posterDataUrl
-                  ? {
-                      backgroundImage: `url(${latest.posterDataUrl}), linear-gradient(135deg, #4a4350 0%, #2c303d 100%)`,
-                    }
-                  : undefined
-              }
-            >
-              <span className="talk-pile__play" aria-hidden>
-                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
-                  <path d="M8 5 L19 12 L8 19 Z" fill="white" />
-                </svg>
-              </span>
-            </button>
-          </>
-        ) : (
-          <div className="talk-pile__empty">
-            <span className="muted small">no rehearsals yet</span>
-          </div>
-        )}
       </div>
 
-      {setup && (
-        <div className="talk-card__setup muted small">
-          {ROOM_LABELS[setup.roomType] ?? setup.roomType} ·{' '}
-          {setup.audience.size} ·{' '}
-          {bucketWord(setup.audience.warmth, WARMTH_WORDS)} ·{' '}
-          {bucketWord(setup.audience.attention, ATTENTION_WORDS)}
-        </div>
-      )}
-
-      <div className="talk-card__actions">
-        <button className="btn btn--pill" onClick={onRehearseAgain}>
-          {hasSessions ? 'New rehearsal' : 'Start first rehearsal'}
-        </button>
-        {hasSessions && (
-          <button className="btn btn--ghost btn--pill" onClick={onOpenProgress}>
-            See progress
-          </button>
+      {/* Rehearsal pile: latest poster on top, 1–2 older ones peeking behind
+          (offset + rotated). 1 rehearsal → single poster; 0 → muted blank. */}
+      <div className="ecard__pile">
+        {total === 0 ? (
+          <span className="ecard__doc ecard__doc--front ecard__doc--empty">
+            <button
+              className="ecard__rehearse"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRehearse();
+              }}
+            >
+              Rehearse
+            </button>
+          </span>
+        ) : (
+          <>
+            {docs[2] && <span className="ecard__doc ecard__doc--b2" style={ps(docs[2])} aria-hidden />}
+            {docs[1] && <span className="ecard__doc ecard__doc--b1" style={ps(docs[1])} aria-hidden />}
+            <span className="ecard__doc ecard__doc--front" style={ps(docs[0])}>
+              <button
+                className="ecard__rehearse"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRehearse();
+                }}
+              >
+                Rehearse
+              </button>
+            </span>
+          </>
         )}
       </div>
 
       {confirmingDelete && (
-        <DeleteConfirmModal
-          sessionCount={totalSessions}
+        <ConfirmDialog
+          title="Delete this talk?"
+          body={
+            total > 0
+              ? `All ${total} ${total === 1 ? 'rehearsal' : 'rehearsals'} will be removed. This can’t be undone.`
+              : undefined
+          }
+          confirmLabel="Delete"
           onCancel={() => setConfirmingDelete(false)}
           onConfirm={() => {
             setConfirmingDelete(false);
@@ -447,7 +423,7 @@ function TalkCard({
           }}
         />
       )}
-    </article>
+    </div>
   );
 }
 
@@ -461,17 +437,25 @@ function KebabMenu({
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Play the close animation (140ms), then unmount the menu.
+  const close = useCallback(() => {
+    setClosing(true);
+    window.setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, 140);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     function onMouseDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) close();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') close();
     }
     window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('keydown', onKey);
@@ -479,13 +463,13 @@ function KebabMenu({
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, close]);
 
   return (
     <div className="kebab-wrap" ref={wrapRef}>
       <button
         className="kebab-btn"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : setOpen(true))}
         aria-label="Talk actions"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -493,11 +477,11 @@ function KebabMenu({
         <DotsIcon />
       </button>
       {open && (
-        <div className="kebab-popover" role="menu">
+        <div className={`kebab-popover${closing ? ' is-closing' : ''}`} role="menu">
           <button
             role="menuitem"
             onClick={() => {
-              setOpen(false);
+              close();
               onRename();
             }}
           >
@@ -505,13 +489,12 @@ function KebabMenu({
           </button>
           <button
             role="menuitem"
-            className="is-destructive"
             onClick={() => {
-              setOpen(false);
+              close();
               onDelete();
             }}
           >
-            Delete talk
+            Delete
           </button>
         </div>
       )}
@@ -576,55 +559,6 @@ function InlineRenameField({
   );
 }
 
-// ====== Delete confirmation ===============================================
-
-function DeleteConfirmModal({
-  sessionCount,
-  onCancel,
-  onConfirm,
-}: {
-  sessionCount: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCancel();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  const subtitle = sessionCount > 0
-    ? `All ${sessionCount} ${sessionCount === 1 ? 'rehearsal' : 'rehearsals'} will be removed. This can’t be undone.`
-    : null;
-
-  return (
-    <div
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      onClick={onCancel}
-    >
-      <div
-        className="modal-card modal-card--confirm"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="modal-card__title">Delete this talk?</h2>
-        {subtitle && <p className="modal-card__sub muted">{subtitle}</p>}
-        <div className="modal-card__actions">
-          <button className="btn btn--ghost btn--pill" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn btn--pill btn--destructive" onClick={onConfirm}>
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ====== Name-talk modal ===================================================
 
 interface NameTalkModalProps {
@@ -636,53 +570,34 @@ function NameTalkModal({ onClose }: NameTalkModalProps) {
   const startNewEvent = useStore((s) => s.startNewEvent);
   const canSubmit = name.trim().length > 0;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const submit = () => {
     if (!canSubmit) return;
     startNewEvent(name.trim());
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-card__close" onClick={onClose} aria-label="Close">
-          ×
+    <Modal onClose={onClose}>
+      <h2 className="modal-title">Name your talk</h2>
+      <p className="modal-body">What are you rehearsing for?</p>
+      <input
+        className="modal-input"
+        type="text"
+        autoFocus
+        placeholder="e.g. Q3 Board Pitch"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submit();
+        }}
+      />
+      <div className="modal-actions">
+        <button className="btn btn--ghost btn--pill" onClick={onClose}>
+          Cancel
         </button>
-        <div className="modal-card__title">
-          <ScreenTitle>Name your talk</ScreenTitle>
-        </div>
-        <p className="modal-card__sub muted">What are you rehearsing for?</p>
-        <input
-          type="text"
-          autoFocus
-          placeholder="e.g. Q3 Board Pitch"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submit();
-          }}
-        />
-        <button
-          className={`btn modal-card__cta ${canSubmit ? '' : 'is-muted'}`}
-          disabled={!canSubmit}
-          onClick={submit}
-        >
+        <button className="btn btn--pill" disabled={!canSubmit} onClick={submit}>
           Continue
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }
-

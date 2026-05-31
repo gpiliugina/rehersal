@@ -3,9 +3,13 @@ import { useStore } from '../state/store';
 import { AudiencePreview as Scene } from '../scene/AudiencePreview';
 import { AttentionMeter } from '../components/AttentionMeter';
 import { ScreenTitle } from '../components/ScreenTitle';
+import { CloseButton } from '../components/CloseButton';
 import { sampleTimeline } from '../scene/ReplayController';
 import { mmss } from '../lib/format';
 import { useRecorder, getRecordingDecision } from '../lib/useRecorder';
+import { useAudienceEngagement } from '../lib/useAudienceEngagement';
+import type { ScreenHead } from '../scene/AudiencePreview';
+import { useGlowWash } from '../components/Ripple';
 
 type Phase = 'idle' | 'live' | 'paused';
 
@@ -13,66 +17,34 @@ export function Rehearsing() {
   const session = useStore((s) => s.activeSession);
   const endRehearsal = useStore((s) => s.endRehearsal);
   const cancelRehearsal = useStore((s) => s.cancelRehearsal);
+  const { layer: gateGlow, spawn: spawnGateGlow } = useGlowWash();
 
   const [phase, setPhase] = useState<Phase>('idle');
+  // Keeps the Start gate mounted briefly after Start so it can fade out while
+  // the room blurs into focus, rather than vanishing instantly.
+  const [gateLeaving, setGateLeaving] = useState(false);
 
   // --- recording ----------------------------------------------------------
   const recorder = useRecorder();
-  const [showPermModal, setShowPermModal] = useState(false);
-  // Small inline hint under the Start gate when we're proceeding without a
-  // recording (denied / skipped / unsupported). Toast handles "busy".
+  // Small inline hint under the Start gate when proceeding without a recording.
   const [inlineNote, setInlineNote] = useState<string | null>(null);
-  const [busyToast, setBusyToast] = useState(false);
   // Guards the async finish path so we only stop+save once.
   const finishingRef = useRef(false);
   const recorderRef = useRef(recorder);
   recorderRef.current = recorder;
 
-  // Decide up front whether to prompt. Runs once on entering Rehearsing,
-  // before the Start gate matters. Honors a remembered per-session choice so
-  // we never re-prompt; only shows the modal when access is genuinely unknown.
+  // Every rehearsal OFFERS recording at the Start gate (record vs practice).
+  // Here we only pre-warm the stream silently if access was already granted, so
+  // "Start rehearsal" records instantly; otherwise the gate's button prompts.
   useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      const r = recorderRef.current;
-      if (!r.supported) {
-        setInlineNote('Recording not supported here');
-        return;
-      }
-      const decision = getRecordingDecision();
-      if (decision === 'granted') {
-        // Re-acquire the stream silently (the browser won't re-prompt).
-        await r.requestAccess();
-        return;
-      }
-      if (decision === 'denied' || decision === 'skipped') {
-        setInlineNote('No recording this time');
-        return;
-      }
-      // Unknown — peek at the permission state to avoid a needless modal for
-      // users who already granted camera access in a previous visit.
-      let perm: PermissionState | null = null;
-      try {
-        const res = await navigator.permissions.query({
-          name: 'camera' as PermissionName,
-        });
-        perm = res.state;
-      } catch {
-        perm = null; // not all browsers can query camera — fall through to modal
-      }
-      if (cancelled) return;
-      if (perm === 'granted') {
-        await r.requestAccess();
-      } else if (perm === 'denied') {
-        setInlineNote('No recording this time');
-      } else {
-        setShowPermModal(true);
-      }
+    const r = recorderRef.current;
+    if (!r.supported) {
+      setInlineNote('Recording not supported here');
+      return;
     }
-    init();
-    return () => {
-      cancelled = true;
-    };
+    if (getRecordingDecision() === 'granted') {
+      r.requestAccess();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -110,11 +82,9 @@ export function Rehearsing() {
     function onKey(e: KeyboardEvent) {
       const tag = (document.activeElement?.tagName ?? '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-      // While the permission modal is up, keys shouldn't drive the rehearsal.
-      if (showPermModal) return;
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
-        if (phase === 'idle') begin();
+        if (phase === 'idle') startRecording();
         else togglePause();
       } else if (e.key === 'Escape' && phase === 'idle') {
         e.preventDefault();
@@ -124,19 +94,60 @@ export function Rehearsing() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, showPermModal]);
+  }, [phase]);
+
+  // --- LIVE voice → audience engagement -----------------------------------
+  // While live, the real voice drives one global engagement value + momentary
+  // reactions (synthetic markers) + earned emoji. The AudioContext is primed
+  // (resumed) from the Start click in begin(). No mic → marker timeline below.
+  const elapsedRef = useRef(elapsed);
+  elapsedRef.current = elapsed;
+  const projection = useRef<ScreenHead[] | null>(null);
+  const audience = useAudienceEngagement({
+    getStream: recorder.getStream,
+    active: phase === 'live',
+    baseAttention: session?.audience.attention ?? 0.5,
+    getElapsed: () => elapsedRef.current,
+    projection,
+  });
+  const useVoice = phase === 'live' && audience.hasMic;
 
   if (!session) return null;
 
-  function begin() {
+  // Begin the rehearsal. `record` = capture video/audio this run (the stream
+  // must already be acquired); false = practice only.
+  function beginRehearsal(record: boolean) {
     bankedSecRef.current = 0;
     setElapsed(0);
     lastResumeRef.current = performance.now();
-    // Start capturing immediately if we have a live stream ready.
-    if (recorderRef.current.status === 'ready') {
+    if (record && recorderRef.current.status === 'ready') {
       recorderRef.current.start();
     }
+    // Resume the audio analysis context WITHIN this click gesture (otherwise it
+    // stays suspended and no audio flows).
+    audience.prime();
     setPhase('live');
+    // Fade the gate out over ~450ms (matches the .start-gate transition), then
+    // unmount it. The scene unblurs in parallel via the is-blurred toggle.
+    setGateLeaving(true);
+    window.setTimeout(() => setGateLeaving(false), 500);
+  }
+
+  // Start gate — record: acquire the mic/camera (prompts if needed) then begin.
+  async function startRecording(e?: React.MouseEvent) {
+    if (e) spawnGateGlow(e);
+    const r = recorderRef.current;
+    let ok = r.status === 'ready';
+    if (!ok && r.supported) ok = await r.requestAccess();
+    if (!ok) setInlineNote('No recording this time');
+    beginRehearsal(ok);
+  }
+
+  // Start gate — skip: practice with NO recording, bypassing any permission prompt.
+  function startPractice(e: React.MouseEvent) {
+    spawnGateGlow(e);
+    recorderRef.current.skip();
+    beginRehearsal(false);
   }
 
   function togglePause() {
@@ -167,32 +178,27 @@ export function Rehearsing() {
     endRehearsal(sec, saved, poster ?? undefined);
   }
 
-  async function onAllow() {
-    const ok = await recorderRef.current.requestAccess();
-    if (ok) {
-      setShowPermModal(false);
-      setBusyToast(false);
-    } else if (recorderRef.current.status === 'busy') {
-      // Keep the modal open so the user can retry or skip.
-      setBusyToast(true);
-    } else {
-      // Denied — proceed without recording.
-      setShowPermModal(false);
-      setInlineNote('No recording this time');
-    }
-  }
-
-  function onSkip() {
-    recorderRef.current.skip();
-    setShowPermModal(false);
-    setInlineNote('No recording this time');
-  }
-
   const sample = sampleTimeline(session.timeline, elapsed);
+  // LIVE with a mic → real-voice ENGAGEMENT drives gaze/attention. Otherwise
+  // (idle, or live without a mic) → the pre-rolled timeline / slider baseline.
   const attention =
     phase === 'idle'
       ? session.audience.attention
-      : sample?.attention ?? session.audience.attention;
+      : useVoice
+        ? audience.engagement
+        : sample?.attention ?? session.audience.attention;
+  // Couple warmth to engagement so high reads as a LEAN-IN and low as a
+  // lean-back (warmth drives the existing posture lean).
+  const warmth = useVoice
+    ? Math.max(
+        0,
+        Math.min(
+          1,
+          session.audience.warmth +
+            (audience.engagement - session.audience.attention) * 0.6,
+        ),
+      )
+    : session.audience.warmth;
 
   const isRecording = recorder.status === 'recording';
   const isRecPaused = recorder.status === 'paused';
@@ -205,15 +211,39 @@ export function Rehearsing() {
         <Scene
           roomType={session.roomType}
           size={session.audience.size}
-          warmth={session.audience.warmth}
+          warmth={warmth}
           attention={attention}
           cameraMode="firstPerson"
-          markers={phase === 'idle' ? undefined : session.markers}
+          markers={
+            phase === 'idle'
+              ? undefined
+              : useVoice
+                ? audience.liveMarkers
+                : session.markers
+          }
           playheadSec={elapsed}
+          projection={projection}
         />
+        {/* Live emoji reactions — float up from a reacting avatar's head. */}
+        {audience.emojis.length > 0 && (
+          <div className="reaction-layer" aria-hidden>
+            {audience.emojis.map((e) => (
+              <span
+                key={e.id}
+                className="reaction-emoji"
+                style={{ left: `${e.x * 100}%`, top: `${e.y * 100}%` }}
+              >
+                {e.char}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <ScreenTitle>Rehearsing</ScreenTitle>
+
+      {/* Close (×) — exit the rehearsal while it's still on the Start gate. */}
+      {phase === 'idle' && <CloseButton onClick={cancelRehearsal} />}
 
       {/* Subtle recording indicator, top-left, frosted scrim. */}
       {(isRecording || isRecPaused) && (
@@ -264,74 +294,35 @@ export function Rehearsing() {
         )}
       </div>
 
-      {phase === 'idle' && !showPermModal && (
-        <div className="start-gate" aria-live="polite">
+      {(phase === 'idle' || gateLeaving) && (
+        <div
+          className={`start-gate ${gateLeaving ? 'is-leaving' : ''}`}
+          aria-live="polite"
+        >
+          <div className="start-gate__cta-wrap">
+            {gateGlow}
+            <button
+              className="start-gate__cta"
+              onClick={startRecording}
+              disabled={recorder.status === 'requesting'}
+              aria-label="Start rehearsal and record"
+            >
+              {recorder.status === 'requesting' ? '…' : 'Start'}
+            </button>
+          </div>
+          <p className="start-gate__sub">
+            We’ll record so you can watch it back — the video stays on your device.
+          </p>
+          {/* Clear SKIP path — practice with no recording, no permission prompt. */}
           <button
-            className="start-gate__cta"
-            onClick={begin}
-            aria-label="Start rehearsal"
+            className="btn btn--ghost btn--pill start-gate__skip"
+            onClick={startPractice}
           >
-            Start
+            Practice without recording
           </button>
-          <p className="start-gate__sub">When you’re ready.</p>
           {inlineNote && <p className="start-gate__note">{inlineNote}</p>}
         </div>
       )}
-
-      {showPermModal && (
-        <PermissionModal
-          busy={busyToast}
-          requesting={recorder.status === 'requesting'}
-          onAllow={onAllow}
-          onSkip={onSkip}
-        />
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Permission modal — shown once before the Start gate when camera/mic access
-// is unknown. Allowing records the rehearsal; skipping proceeds without it.
-// =============================================================================
-
-function PermissionModal({
-  busy,
-  requesting,
-  onAllow,
-  onSkip,
-}: {
-  busy: boolean;
-  requesting: boolean;
-  onAllow: () => void;
-  onSkip: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-card__title">
-          <ScreenTitle>Allow camera and microphone</ScreenTitle>
-        </div>
-        <p className="modal-card__sub muted">
-          We’ll record your rehearsal so you can watch it back. The recording
-          stays on your device — nothing is uploaded.
-        </p>
-        {busy && (
-          <p className="modal-card__sub modal-card__sub--warn">
-            Camera busy — it may be in use by another app. Try again, or skip.
-          </p>
-        )}
-        <button
-          className="btn modal-card__cta"
-          onClick={onAllow}
-          disabled={requesting}
-        >
-          {requesting ? 'Requesting…' : busy ? 'Try again' : 'Allow access'}
-        </button>
-        <button className="modal-card__skip-link" onClick={onSkip}>
-          Skip this time
-        </button>
-      </div>
     </div>
   );
 }

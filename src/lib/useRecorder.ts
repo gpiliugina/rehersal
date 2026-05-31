@@ -239,6 +239,13 @@ export function useRecorder() {
     [stopStream],
   );
 
+  /**
+   * The live capture stream (camera+mic), or null before access is granted /
+   * after teardown. Exposed so live voice-analysis can TAP the same mic stream
+   * (via a Web Audio MediaStreamSource) — never re-requesting the device.
+   */
+  const getStream = useCallback(() => streamRef.current, []);
+
   /** Tear down without saving — used when a rehearsal is cancelled. */
   const discard = useCallback(() => {
     const rec = recorderRef.current;
@@ -262,5 +269,6 @@ export function useRecorder() {
     resume,
     stopAndSave,
     discard,
+    getStream,
   };
 }

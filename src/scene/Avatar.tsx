@@ -1,28 +1,37 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group } from 'three';
+import { CanvasTexture, Group, Mesh } from 'three';
 import type { AvatarSlot } from './AudienceLayout';
+import { Chair, DeskLaptop } from './Furniture';
+import type { SeatKind } from '../lib/rooms';
 import type { Marker } from '../state/types';
 import {
   makePersonality,
   decide,
   buildReaction,
   envelope,
+  baselineExpression,
+  EYE_POSES,
+  EYE_TWEEN,
   PARTICIPATION,
+  type Expression,
   type ReactionInstance,
 } from './audienceAnimation';
 
 interface Props {
   slot: AvatarSlot;
+  /** Clothing colour (body + arms + legs) — the ROOM colour, same for everyone. */
+  clothing: string;
+  /** What this person sits/stands at (per-room): desk+laptop, chair, or nothing. */
+  seat: SeatKind;
   /**
-   * Warmth 0..1 — drives POSTURE. Low warmth = closed off (torso pulled
-   * back, shoulders rolled forward, arms tight to body). High warmth =
-   * open and leaned in toward the speaker.
+   * Warmth 0..1 — drives POSTURE / lean. Low warmth = closed off (pulled back,
+   * shoulders rolled forward, arms tight). High warmth = open + leaned in.
    */
   warmth: number;
   /**
-   * Attention 0..1 — drives GAZE. Low attention = head looking off / down /
-   * fidgeting. High attention = eyes forward on the speaker.
+   * Attention 0..1 — drives GAZE + lean-in. Low = head off / down / fidgeting;
+   * high = eyes forward on the speaker.
    */
   attention: number;
   // Disable subtle idle animation (used for static thumbnails).
@@ -34,17 +43,36 @@ interface Props {
   playheadSec?: number;
 }
 
-const PALETTES = [
-  { shirt: '#7a8a6a', skin: '#e6c9a8' },
-  { shirt: '#c79c75', skin: '#f0d8bb' },
-  { shirt: '#5e6f80', skin: '#d6b696' },
-  { shirt: '#8a7a90', skin: '#e9c8a5' },
-  { shirt: '#a07060', skin: '#d8b797' },
-  { shirt: '#6a8587', skin: '#ecceaa' },
-];
+// ---- Proportions (relative units; FIG_SCALE brings them to row size) -------
+const FIG_SCALE = 0.6;
+const SKIN = '#EFE7D6'; // head only — one tone for everyone (--color-bg-sunken)
+const EYE = '#1F1A2E'; // ink-deep
+const HEAD_Y = 2.15; // float height — head hovers a hairline above the body
+
+// Shared soft radial contact-shadow texture (built once, reused by all figures).
+let shadowTex: CanvasTexture | null = null;
+function contactShadow(): CanvasTexture | null {
+  if (shadowTex) return shadowTex;
+  if (typeof document === 'undefined') return null;
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, 'rgba(40,30,20,0.30)');
+  g.addColorStop(0.55, 'rgba(40,30,20,0.14)');
+  g.addColorStop(1, 'rgba(40,30,20,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  shadowTex = new CanvasTexture(c);
+  return shadowTex;
+}
 
 export function Avatar({
   slot,
+  clothing,
+  seat,
   warmth,
   attention,
   freeze,
@@ -54,13 +82,15 @@ export function Avatar({
   const bodyRef = useRef<Group>(null);
   const headRef = useRef<Group>(null);
   const eyesRef = useRef<Group>(null);
-  const colors = useMemo(
-    () => PALETTES[Math.floor(slot.variant * PALETTES.length) % PALETTES.length],
-    [slot.variant],
-  );
+  const leftEyeRef = useRef<Mesh>(null);
+  const rightEyeRef = useRef<Mesh>(null);
+  // Current (tweened) eye pose — morphs toward the active expression.
+  const eyePose = useRef({ sx: 0.55, sy: 1.05, oy: 0, glance: 0, asym: 0 });
+  const shadow = useMemo(contactShadow, []);
 
   // Stable per-avatar personality + seed. Mix position into the seed so two
-  // slots that happen to share a `variant` still get distinct phases.
+  // slots that happen to share a `variant` still get distinct phases (and
+  // blink timing — they never blink in unison).
   const seed = useMemo(
     () =>
       (Math.floor(
@@ -71,18 +101,17 @@ export function Avatar({
   );
   const p = useMemo(() => makePersonality(seed), [seed]);
 
-  // Posture from WARMTH: open & leaning forward (warm) vs closed off (cold).
-  //   leanX:  +ve = lean forward; -ve = pull back/recline
-  //   armTuck: when low warmth, arms pull tight to body (a subtle proxy
-  //            for "arms crossed" without modeling actual arms).
-  const leanX = (warmth - 0.5) * 0.5; // -0.25 .. +0.25 rad
-  const armTuck = Math.max(0, 0.5 - warmth); // 0..0.5
-  const shoulderRoll = (0.5 - warmth) * 0.25; // negative warmth → roll fwd
-  // Baseline gaze/head bias from the audience-setup sliders.
-  const pitchBase = (1 - attention) * -0.42; // distracted → droops down
+  // Posture from WARMTH + ATTENTION:
+  //   leanX:  +ve = lean forward (engaged/warm); -ve = pull back (cold/bored)
+  const leanX = (warmth - 0.5) * 0.4 + (attention - 0.5) * 0.25;
+  const armTuck = Math.max(0, 0.5 - warmth); // low warmth → arms pull in
+  const shoulderRoll = (0.5 - warmth) * 0.25;
+  const pitchBase = (1 - attention) * -0.42; // distracted → head droops down
   const headRollBase = (0.5 - warmth) * 0.18; // skeptical → slight tilt
 
-  const seatedYOffset = slot.pose === 'seated' ? -0.25 : 0;
+  // Seated bodies sit UP on the seat (base near the chair seat), not sunk into
+  // the floor — so they read as sitting IN the armchair, not in front of it.
+  const seatedYOffset = slot.pose === 'seated' ? 0.12 : 0;
 
   // --- live animation state (refs so it survives re-renders) ---
   const playheadRef = useRef(playheadSec);
@@ -93,7 +122,7 @@ export function Avatar({
   const turn = useRef({ target: 0, until: 0, next: -1 });
   const blink = useRef({ until: 0, next: -1 });
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const body = bodyRef.current;
     const head = headRef.current;
     if (!body || !head || freeze) return;
@@ -102,7 +131,6 @@ export function Avatar({
     // --- reaction firing: detect playhead crossing a marker ---
     const playhead = playheadRef.current;
     if (playhead < processedUpTo.current - 0.4) {
-      // Scrubbed backward — re-arm so forward crossings fire again.
       processedUpTo.current = playhead;
     }
     if (markers) {
@@ -124,7 +152,6 @@ export function Avatar({
     const shift = Math.sin(t * p.shiftOmega + p.shiftPhase) * 0.035;
 
     // Idle head-turn: drift to a random ±15° target, hold, return to centre.
-    // Distracted crowds turn more often and further; engaged crowds hold gaze.
     const T = turn.current;
     if (T.next < 0) T.next = t + p.headTurnOffset;
     const mag = 0.26 * (0.6 + (1 - attention) * 0.8);
@@ -139,7 +166,7 @@ export function Avatar({
     }
     smoothYaw.current += (T.target - smoothYaw.current) * 0.05;
 
-    // Blink: brief eye squash every ~4–8s.
+    // Blink: brief eye squash. Random phase + interval per avatar (from seed).
     const B = blink.current;
     if (B.next < 0) B.next = t + p.blinkPhase + 3;
     if (t >= B.next) {
@@ -147,8 +174,9 @@ export function Avatar({
       B.next = t + 4 + p.rng() * 4;
     }
 
-    // --- LAYER 2: active reaction (enveloped, overrides relevant transforms) ---
+    // --- LAYER 2: active reaction (enveloped) ---
     let rPosZ = 0, rBodyX = 0, rPitch = 0, rYaw = 0, rRoll = 0;
+    let activeExpr: Expression | null = null;
     const inst = reaction.current;
     if (inst) {
       if (t >= inst.startAt + inst.dur) {
@@ -160,127 +188,132 @@ export function Avatar({
         rPitch = inst.pitch * e;
         rYaw = inst.yaw * e;
         rRoll = inst.roll * e;
+        if (e > 0.4) activeExpr = inst.expr; // hold the reaction's eyes mid-beat
       }
     }
 
-    // --- blend + apply ---
-    body.position.set(0, seatedYOffset + breathe, rPosZ);
+    // --- blend + apply (scale is left untouched — set once in JSX) ---
+    // SEATED figures never translate forward (they'd slide off the chair) — the
+    // lean-in is rotation only, pivoting at the hips/base. Standers may shift.
+    const bodyZ = slot.pose === 'seated' ? 0 : rPosZ;
+    body.position.set(0, seatedYOffset + breathe, bodyZ);
     body.rotation.set(leanX + rBodyX, 0, shoulderRoll + shift);
     head.rotation.set(pitchBase + rPitch, smoothYaw.current + rYaw, headRollBase + rRoll);
+
+    // --- EXPRESSION: tween the eyes toward the active/baseline pose (~150ms) ---
+    const expr: Expression = activeExpr ?? baselineExpression(attention, warmth);
+    const tgt = EYE_POSES[expr];
+    const EP = eyePose.current;
+    const k = Math.min(1, delta / EYE_TWEEN);
+    EP.sx += (tgt.sx - EP.sx) * k;
+    EP.sy += (tgt.sy - EP.sy) * k;
+    EP.oy += (tgt.oy - EP.oy) * k;
+    EP.glance += (tgt.glance - EP.glance) * k;
+    EP.asym += (tgt.asym - EP.asym) * k;
+    const le = leftEyeRef.current;
+    const re = rightEyeRef.current;
+    if (le && re) {
+      const gx = EP.glance * p.yawSign;
+      le.position.set(-0.17 + gx, 0.04 + EP.oy, 0.46);
+      re.position.set(0.17 + gx, 0.04 + EP.oy, 0.46);
+      // Skeptical narrows the look-side eye only.
+      le.scale.set(EP.sx, EP.sy * (p.yawSign < 0 ? 1 - EP.asym : 1), 0.4);
+      re.scale.set(EP.sx, EP.sy * (p.yawSign > 0 ? 1 - EP.asym : 1), 0.4);
+    }
+    // Blink multiplies the eye height (eyesRef wraps both eyes).
     if (eyesRef.current) {
       eyesRef.current.scale.y = t < B.until ? 0.15 : 1;
     }
   });
 
   return (
-    <group
-      position={slot.position}
-      rotation={[0, slot.rotationY, 0]}
-    >
-      {/* Chair only when this slot actually has one — meetingRoom does,
-          conferenceStage / townHall don't. yourSpace / smallHuddle: only
-          if explicitly seated. */}
-      {slot.pose === 'seated' && needsChair(slot) && (
-        <group>
-          <mesh position={[0, 0.22, 0]}>
-            <boxGeometry args={[0.7, 0.06, 0.7]} />
-            <meshStandardMaterial color="#cdbfa9" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 0.55, 0.35]}>
-            <boxGeometry args={[0.7, 0.5, 0.06]} />
-            <meshStandardMaterial color="#b8a78c" roughness={0.95} />
-          </mesh>
+    <group position={slot.position} rotation={[0, slot.rotationY, 0]}>
+      {/* Soft radial contact shadow on the ground under the figure. */}
+      {shadow && (
+        <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1}>
+          <circleGeometry args={[0.62, 28]} />
+          <meshBasicMaterial map={shadow} transparent depthWrite={false} />
+        </mesh>
+      )}
+
+      {/* Per-room furniture: canonical desk+laptop, an armchair, or nothing.
+          The armchair is rotated to face the same way as the figure — backrest
+          BEHIND, open seat + armrests toward the camera. */}
+      {seat === 'desk' && <DeskLaptop />}
+      {seat === 'chair' && (
+        <group rotation={[0, Math.PI, 0]}>
+          <Chair />
         </group>
       )}
-      {/* Desk + laptop ONLY for slots that opted in (meetingRoom). */}
-      {slot.hasDesk && (
-        <group>
-          <mesh position={[0, 0.65, -0.55]}>
-            <boxGeometry args={[1.05, 0.05, 0.55]} />
-            <meshStandardMaterial color="#bfae93" roughness={0.85} />
-          </mesh>
-          <mesh position={[0, 0.74, -0.55]} rotation={[-0.25, 0, 0]}>
-            <boxGeometry args={[0.45, 0.3, 0.02]} />
-            <meshStandardMaterial color="#3a3d48" roughness={0.6} />
-          </mesh>
-        </group>
-      )}
+
+      {/* The figure. bodyRef pivots at the base for lean; everything inside is
+          authored in relative units and brought to row size by FIG_SCALE. */}
       <group
         ref={bodyRef}
         position={[0, seatedYOffset, 0]}
         rotation={[leanX, 0, shoulderRoll]}
+        scale={FIG_SCALE}
       >
-        {/* Torso */}
-        <mesh position={[0, slot.pose === 'seated' ? 0.85 : 1.0, 0]}>
-          <capsuleGeometry args={[0.28, 0.55, 6, 12]} />
-          <meshStandardMaterial color={colors.shirt} roughness={0.9} />
-        </mesh>
-        {/* Arms — short capsules. When warmth is low we tuck them close
-            to the body, suggesting "closed off". */}
-        <Arm side={-1} y={slot.pose === 'seated' ? 0.85 : 1.0} tuck={armTuck} color={colors.shirt} />
-        <Arm side={+1} y={slot.pose === 'seated' ? 0.85 : 1.0} tuck={armTuck} color={colors.shirt} />
-        {/* Head — pivots about the sphere centre for nods / turns / tilts. */}
-        <group
-          ref={headRef}
-          position={[0, slot.pose === 'seated' ? 1.45 : 1.6, 0]}
-          rotation={[pitchBase, 0, headRollBase]}
-        >
-          <mesh>
-            <sphereGeometry args={[0.21, 18, 14]} />
-            <meshStandardMaterial color={colors.skin} roughness={0.8} />
-          </mesh>
-          {/* Eyes — grouped so a quick y-squash reads as a blink. */}
-          <group ref={eyesRef}>
-            <mesh position={[-0.075, 0.03, 0.18]}>
-              <sphereGeometry args={[0.022, 8, 8]} />
-              <meshStandardMaterial color="#1f2230" />
-            </mesh>
-            <mesh position={[0.075, 0.03, 0.18]}>
-              <sphereGeometry args={[0.022, 8, 8]} />
-              <meshStandardMaterial color="#1f2230" />
-            </mesh>
-          </group>
-        </group>
-        {/* Legs — standing avatars only */}
+        {/* Legs — standing avatars only (seated legs would clash with desks). */}
         {slot.pose === 'standing' && (
           <>
-            <mesh position={[-0.11, 0.4, 0]}>
-              <capsuleGeometry args={[0.1, 0.55, 4, 8]} />
-              <meshStandardMaterial color="#3f4250" roughness={0.95} />
+            <mesh position={[-0.27, -0.02, 0]}>
+              <capsuleGeometry args={[0.22, 0.42, 8, 16]} />
+              <meshStandardMaterial color={clothing} roughness={0.9} metalness={0} />
             </mesh>
-            <mesh position={[0.11, 0.4, 0]}>
-              <capsuleGeometry args={[0.1, 0.55, 4, 8]} />
-              <meshStandardMaterial color="#3f4250" roughness={0.95} />
+            <mesh position={[0.27, -0.02, 0]}>
+              <capsuleGeometry args={[0.22, 0.42, 8, 16]} />
+              <meshStandardMaterial color={clothing} roughness={0.9} metalness={0} />
             </mesh>
           </>
         )}
+
+        {/* Body — soft rounded clothing capsule, slightly flattened front-to-back
+            so the torso tucks cleanly behind the desk. */}
+        <mesh position={[0, 0.7, 0]} scale={[1, 1, 0.9]}>
+          <capsuleGeometry args={[0.6, 0.62, 10, 22]} />
+          <meshStandardMaterial color={clothing} roughness={0.9} metalness={0} />
+        </mesh>
+
+        {/* Arms — stubby clothing sleeves, splayed slightly; tuck in when cold. */}
+        <Arm side={-1} tuck={armTuck} color={clothing} />
+        <Arm side={1} tuck={armTuck} color={clothing} />
+
+        {/* Head — SKIN sphere floating just above the body. Pivots on its OWN
+            centre (headRef origin) so the hairline gap stays constant. */}
+        <group ref={headRef} position={[0, HEAD_Y, 0]} rotation={[pitchBase, 0, headRollBase]}>
+          <mesh scale={[1, 1.05, 1]}>
+            <sphereGeometry args={[0.5, 30, 22]} />
+            <meshStandardMaterial color={SKIN} roughness={0.9} metalness={0} />
+          </mesh>
+          {/* Eyes — spheres morphed each frame into the current EXPRESSION
+              (scale/offset). In eyesRef so the blink still squashes them. The
+              per-eye scale + position are driven in useFrame. No nose / mouth. */}
+          <group ref={eyesRef}>
+            <mesh ref={leftEyeRef} position={[-0.17, 0.04, 0.46]} scale={[0.55, 1.05, 0.4]}>
+              <sphereGeometry args={[0.1, 14, 14]} />
+              <meshStandardMaterial color={EYE} roughness={0.9} metalness={0} />
+            </mesh>
+            <mesh ref={rightEyeRef} position={[0.17, 0.04, 0.46]} scale={[0.55, 1.05, 0.4]}>
+              <sphereGeometry args={[0.1, 14, 14]} />
+              <meshStandardMaterial color={EYE} roughness={0.9} metalness={0} />
+            </mesh>
+          </group>
+        </group>
       </group>
     </group>
   );
 }
 
-interface ArmProps {
-  side: -1 | 1;
-  y: number;
-  tuck: number; // 0..0.5
-  color: string;
-}
-
-function Arm({ side, y, tuck, color }: ArmProps) {
-  // Tuck pulls the arm toward the body's centerline (lower x offset) and
-  // rotates it slightly inward, suggesting a closed posture.
-  const x = side * (0.32 - tuck * 0.1);
-  const rotZ = side * (-0.05 + tuck * 0.35);
+// Stubby clothing arm at the body's side. Splayed z±0.18 at rest; low warmth
+// (high tuck) rotates it inward + pulls it toward the body — a closed posture.
+function Arm({ side, tuck, color }: { side: -1 | 1; tuck: number; color: string }) {
+  const x = side * (0.64 - tuck * 0.12);
+  const rotZ = side * (0.18 + tuck * 0.4);
   return (
-    <mesh position={[x, y - 0.05, 0.02]} rotation={[0, 0, rotZ]}>
-      <capsuleGeometry args={[0.08, 0.42, 4, 8]} />
-      <meshStandardMaterial color={color} roughness={0.9} />
+    <mesh position={[x, 0.82, 0]} rotation={[0, 0, rotZ]}>
+      <capsuleGeometry args={[0.17, 0.48, 8, 16]} />
+      <meshStandardMaterial color={color} roughness={0.9} metalness={0} />
     </mesh>
   );
-}
-
-// meetingRoom seats sit at desks (chair geometry would clash with the
-// long table edge); other rooms get proper chairs around seated avatars.
-function needsChair(slot: AvatarSlot): boolean {
-  return !slot.hasDesk;
 }

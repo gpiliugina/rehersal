@@ -17,9 +17,6 @@ export interface AvatarSlot {
   // A small per-avatar seed (0..1) so each avatar's idle motion is unique
   // without us needing a separate prop everywhere.
   variant: number;
-  // True when the avatar's seat has a desk/table in front (only meetingRoom).
-  // Used by Avatar.tsx so the stage/town-hall types don't show laptops/desks.
-  hasDesk?: boolean;
 }
 
 export function layoutAudience(
@@ -64,6 +61,9 @@ function meetingRoomLayout(size: number): AvatarSlot[] {
   const perRow = Math.max(3, Math.ceil(Math.sqrt(size * 1.6)));
   const rowSpacing = 1.7;
   const colSpacing = 1.25;
+  // Front row starts well back so it isn't huge/cropped at the camera (matches
+  // the scale the other rooms read at). Rows follow at the same spacing.
+  const frontZ = 2.7;
   let placed = 0;
   let row = 0;
   while (placed < size) {
@@ -72,11 +72,11 @@ function meetingRoomLayout(size: number): AvatarSlot[] {
     for (let c = 0; c < inThisRow; c++) {
       const jitter = ((row * 17 + c * 31) % 13) / 60 - 0.1;
       slots.push({
-        position: [xStart + c * colSpacing + jitter, 0, 1.5 + row * rowSpacing],
+        position: [xStart + c * colSpacing + jitter, 0, frontZ + row * rowSpacing],
         rotationY: Math.PI,
-        pose: 'seated',
+        // Town hall — standing rows, no furniture.
+        pose: 'standing',
         variant: ((row * 7 + c * 13) % 100) / 100,
-        hasDesk: true,
       });
       placed++;
     }
@@ -85,31 +85,46 @@ function meetingRoomLayout(size: number): AvatarSlot[] {
   return slots;
 }
 
-// ---- yourSpace -------------------------------------------------------------
-// Loose semicircle in front of the speaker; alternating seated/standing.
+// ---- yourSpace ("Meeting room") --------------------------------------------
+// A continuous curved meeting crowd facing the speaker, seated at desks. Rows
+// curve at increasing radius; alternate rows are offset by HALF a seat (brick
+// stagger) and every person gets small position + rotation jitter, so heads
+// never line up into columns/diagonals and there's no empty seam down the
+// centre. Linear seat spacing > desk width, so desks don't overlap on the curve.
 function yourSpaceLayout(size: number): AvatarSlot[] {
   const slots: AvatarSlot[] = [];
-  const perArc = 9;
-  const arcs = Math.ceil(size / perArc);
+  const linearSeat = 1.35; // > desk width (1.2) so desks don't collide
+  const row0Radius = 2.5;
+  const rowGap = 1.6;
   let placed = 0;
-  for (let a = 0; a < arcs && placed < size; a++) {
-    const radius = 2.2 + a * 1.4;
-    const remaining = size - placed;
-    const here = Math.min(perArc, remaining);
-    const spread = Math.PI * (0.55 + a * 0.08);
-    for (let i = 0; i < here; i++) {
-      const tNorm = here === 1 ? 0.5 : i / (here - 1);
-      const angle = -spread / 2 + tNorm * spread;
-      const x = Math.sin(angle) * radius;
-      const z = Math.cos(angle) * radius + 1;
+  let row = 0;
+  while (placed < size) {
+    const radius = row0Radius + row * rowGap;
+    const angStep = linearSeat / radius; // constant linear spacing per row
+    const arcSpan = 2.2 + row * 0.15; // a touch wider further back
+    let capacity = Math.floor(arcSpan / angStep) + 1;
+    capacity = Math.min(capacity, size - placed);
+    // Brick stagger: shift alternate rows half a seat so seats interleave and
+    // the centre is always covered (no column / seam down the middle).
+    const stagger = (row % 2) * (angStep / 2);
+    const start = -((capacity - 1) * angStep) / 2 + stagger;
+    for (let i = 0; i < capacity && placed < size; i++) {
+      // Deterministic per-person jitter (stable across re-renders).
+      const h = (Math.imul(row + 1, 73856093) ^ Math.imul(i + 1, 19349663)) >>> 0;
+      const j1 = (h % 1000) / 1000 - 0.5;
+      const j2 = ((h >>> 10) % 1000) / 1000 - 0.5;
+      const j3 = ((h >>> 20) % 1000) / 1000 - 0.5;
+      const angle = start + i * angStep + j2 * angStep * 0.22;
+      const r = radius + j1 * 0.32;
       slots.push({
-        position: [x, 0, z],
-        rotationY: Math.PI + angle,
-        pose: (placed + a) % 2 === 0 ? 'standing' : 'seated',
-        variant: ((a * 11 + i * 7) % 100) / 100,
+        position: [Math.sin(angle) * r, 0, Math.cos(angle) * r + 1.0],
+        rotationY: Math.PI + angle + j3 * 0.3,
+        pose: 'seated',
+        variant: (h % 100) / 100,
       });
       placed++;
     }
+    row++;
   }
   return slots;
 }
@@ -144,37 +159,30 @@ function conferenceStageLayout(size: number): AvatarSlot[] {
 }
 
 // ---- smallHuddle -----------------------------------------------------------
-// 3–4 people sitting very close to the speaker, intimate. If user pushes the
-// slider higher the rest stand in a tight ring behind the first 4.
+// A loose RING around the central table (ROOM_CONFIG.huddleTable), everyone
+// FACING INWARD. The camera is one side of the huddle, so we leave an open arc
+// on the camera side (we see the far faces) and fill the rest of the ring.
 function smallHuddleLayout(size: number): AvatarSlot[] {
   const slots: AvatarSlot[] = [];
-  const front = Math.min(size, 4);
-  for (let i = 0; i < front; i++) {
-    const tNorm = front === 1 ? 0.5 : i / (front - 1);
-    const angle = -0.55 + tNorm * 1.1;
-    const radius = 1.7;
+  const cx = 0;
+  const cz = 2.0; // matches ROOM_CONFIG.smallHuddle.huddleTable
+  const openArc = 1.5; // radians left open on the camera side (near ±π)
+  const start = -Math.PI + openArc / 2;
+  const span = 2 * Math.PI - openArc;
+  const perRing = 7;
+  for (let i = 0; i < size; i++) {
+    const ring = Math.floor(i / perRing);
+    const inRing = i % perRing;
+    const here = Math.min(perRing, size - ring * perRing);
+    const tNorm = here === 1 ? 0.5 : inRing / (here - 1);
+    const theta = start + tNorm * span;
+    const r = 1.75 + ring * 1.05 + (i % 2) * 0.12;
     slots.push({
-      position: [Math.sin(angle) * radius, 0, Math.cos(angle) * radius + 0.6],
-      rotationY: Math.PI + angle,
-      pose: 'seated',
-      variant: ((i * 31) % 100) / 100,
-    });
-  }
-  let placed = front;
-  let ringIdx = 0;
-  while (placed < size) {
-    const ring = Math.floor(ringIdx / 6);
-    const inRing = ringIdx % 6;
-    const angle = -1.1 + (inRing / 5) * 2.2;
-    const radius = 2.8 + ring * 0.9;
-    slots.push({
-      position: [Math.sin(angle) * radius, 0, Math.cos(angle) * radius + 0.5],
-      rotationY: Math.PI + angle,
+      position: [cx + Math.sin(theta) * r, 0, cz + Math.cos(theta) * r],
+      rotationY: theta + Math.PI, // face the centre / table
       pose: 'standing',
-      variant: ((placed * 13 + ring * 9) % 100) / 100,
+      variant: ((i * 37 + ring * 11) % 100) / 100,
     });
-    placed++;
-    ringIdx++;
   }
   return slots;
 }

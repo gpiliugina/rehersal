@@ -271,9 +271,24 @@ function TalkGallery({
     prevStepRef.current = step;
   });
 
+  // Each distinct talk renders AT MOST ONCE. With fewer talks than lanes the
+  // raw lane→event mapping repeats the same talk across slots; assign every
+  // event to its most-central lane and render only those, so one talk = one
+  // card. (With ≥7 talks every lane already maps to a distinct event.)
+  const laneSlots = LANES.map((lane) => ({ lane, slot: mod(lane + step, 7) }));
+  const bestLaneForEvent = new Map<number, { lane: number; slot: number }>();
+  for (const { lane, slot } of laneSlots) {
+    const idx = mod(step - slot + 1, n);
+    const cur = bestLaneForEvent.get(idx);
+    if (!cur || Math.abs(slot - 3) < Math.abs(cur.slot - 3)) {
+      bestLaneForEvent.set(idx, { lane, slot });
+    }
+  }
+  const renderLanes = new Set([...bestLaneForEvent.values()].map((v) => v.lane));
+
   return (
     <div className="home__gallery">
-      {LANES.map((lane) => {
+      {LANES.filter((lane) => renderLanes.has(lane)).map((lane) => {
         const slot = mod(lane + step, 7);
         const prevSlot = mod(lane + prevStep, 7);
         const teleported = Math.abs(slot - prevSlot) > 1;
@@ -301,7 +316,7 @@ function TalkGallery({
         const ev = events[mod(step - slot + 1, n)];
         return (
           <TalkSheet
-            key={lane}
+            key={ev.id}
             event={ev}
             isActive={false}
             style={style}

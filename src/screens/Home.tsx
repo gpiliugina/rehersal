@@ -67,36 +67,28 @@ export function Home() {
       </div>
 
       {/* Wordmark is rendered globally as <Logo /> (top-left on every page). */}
-      {events.length === 0 ? (
-        // First-time / empty state — no cards. Laconic centred prompt + the
-        // same glow-wash CTA. (events load synchronously from localStorage, so
-        // there's no async flash to guard against.)
-        <div className="home-empty">
-          <h1 className="home-empty__headline">Rehearse your first talk</h1>
-          <p className="home-empty__sub">
-            Pick a room and an audience, then practice in front of them
-          </p>
-          <PlusButton onClick={() => setModalOpen(true)} label="Start rehearsal" />
-        </div>
-      ) : (
-        <>
-          <h1 className="home__headline">
-            <span className="home__headline-prefix">Let’s train your</span>
-            <CyclingWord />
-          </h1>
-          <TalkGallery
-            events={events}
-            step={step}
-            dir={dir}
-            onOpenProgress={(id) => openProgress(id)}
-            onRehearse={(id) => rehearseAgain(id)}
-            onRename={(id, name) => renameEvent(id, name)}
-            onDelete={(id) => deleteEvent(id)}
-          />
-          {/* "+ New" stays bottom-centre. */}
-          <PlusButton onClick={() => setModalOpen(true)} />
-        </>
+      <h1 className="home__headline">
+        <span className="home__headline-prefix">Let’s train your</span>
+        <CyclingWord />
+      </h1>
+
+      {/* Empty / first-time state is just the normal Home with NO cards. The
+          gallery renders only once a talk exists — events come from synchronous
+          localStorage, so there's no async load that could flash an empty grid. */}
+      {events.length > 0 && (
+        <TalkGallery
+          events={events}
+          step={step}
+          dir={dir}
+          onOpenProgress={(id) => openProgress(id)}
+          onRehearse={(id) => rehearseAgain(id)}
+          onRename={(id, name) => renameEvent(id, name)}
+          onDelete={(id) => deleteEvent(id)}
+        />
       )}
+
+      {/* "+ New" stays bottom-centre in BOTH states (same coords + size). */}
+      <PlusButton onClick={() => setModalOpen(true)} />
 
       {modalOpen && <NameTalkModal onClose={() => setModalOpen(false)} />}
     </div>
@@ -114,7 +106,7 @@ function PlusIcon() {
 
 // "+ New" button (bottom-centre). Clicking blooms the 3-wave glow wash out
 // from the button centre. The button itself never moves.
-function PlusButton({ onClick, label }: { onClick: () => void; label?: string }) {
+function PlusButton({ onClick }: { onClick: () => void }) {
   const { layer, spawn } = useGlowWash();
   return (
     <div className="home__plus-wrap">
@@ -125,11 +117,10 @@ function PlusButton({ onClick, label }: { onClick: () => void; label?: string })
           spawn(e);
           onClick();
         }}
-        aria-label={label ?? 'New talk'}
+        aria-label="New talk"
       >
         <PlusIcon />
       </button>
-      {label && <span className="home__plus-label">{label}</span>}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { AudiencePreview as Scene } from '../scene/AudiencePreview';
-import { AttentionMeter } from '../components/AttentionMeter';
+import { ConfirmDialog } from '../components/Modal';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { CloseButton } from '../components/CloseButton';
 import { sampleTimeline } from '../scene/ReplayController';
@@ -28,6 +28,8 @@ export function Rehearsing() {
   const recorder = useRecorder();
   // Small inline hint under the Start gate when proceeding without a recording.
   const [inlineNote, setInlineNote] = useState<string | null>(null);
+  // Bin button → confirm before discarding the current recording.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Guards the async finish path so we only stop+save once.
   const finishingRef = useRef(false);
   const recorderRef = useRef(recorder);
@@ -263,7 +265,6 @@ export function Rehearsing() {
         {phase !== 'idle' && (
           <div className="rehearsing__center-bottom">
             <div className="hud-pill">
-              <AttentionMeter value={attention} />
               <div className="hud-timer">{mmss(elapsed)}</div>
               <button
                 className="btn-icon btn-icon--on-light"
@@ -290,6 +291,19 @@ export function Rehearsing() {
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                   <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+              <button
+                className="btn-icon btn-icon--on-light"
+                onClick={() => setConfirmingDelete(true)}
+                aria-label="Delete recording"
+                title="Delete recording"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M4 7h16" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M5 7l1 13h12l1 -13" />
+                  <path d="M9 7V4h6v3" />
                 </svg>
               </button>
             </div>
@@ -325,6 +339,19 @@ export function Rehearsing() {
           </button>
           {inlineNote && <p className="start-gate__note">{inlineNote}</p>}
         </div>
+      )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete this recording?"
+          body="This rehearsal’s recording will be discarded. This can’t be undone."
+          confirmLabel="Delete"
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            cancelRehearsal(); // discards the in-progress recording + exits
+          }}
+        />
       )}
     </div>
   );

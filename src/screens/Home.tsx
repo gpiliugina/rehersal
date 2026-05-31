@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useGlowWash } from '../components/Ripple';
 import { Modal, ConfirmDialog } from '../components/Modal';
+import { useIsMobile } from '../lib/useIsMobile';
 import { relativeTime } from '../lib/format';
 import type { Event } from '../state/types';
 
@@ -32,6 +33,7 @@ export function Home() {
   const openProgress = useStore((s) => s.openProgress);
   const renameEvent = useStore((s) => s.renameEvent);
   const deleteEvent = useStore((s) => s.deleteEvent);
+  const isMobile = useIsMobile();
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -41,6 +43,9 @@ export function Home() {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const wheelAtRef = useRef(0);
+  // Looping rule: <5 cards → BOUNDED (clamp at the ends, no wrap); ≥5 → loop.
+  const countRef = useRef(events.length);
+  countRef.current = events.length;
 
   // Scroll advances the cards forward / back, throttled.
   useEffect(() => {
@@ -52,7 +57,11 @@ export function Home() {
       wheelAtRef.current = now;
       const d = delta > 0 ? 1 : -1;
       setDir(d);
-      setStep((s) => s + d);
+      setStep((s) => {
+        const next = s + d;
+        const cnt = countRef.current;
+        return cnt < 5 ? Math.max(0, Math.min(cnt - 1, next)) : next;
+      });
     };
     window.addEventListener('wheel', onWheel, { passive: true });
     return () => window.removeEventListener('wheel', onWheel);
@@ -75,17 +84,26 @@ export function Home() {
       {/* Empty / first-time state is just the normal Home with NO cards. The
           gallery renders only once a talk exists — events come from synchronous
           localStorage, so there's no async load that could flash an empty grid. */}
-      {events.length > 0 && (
-        <TalkGallery
-          events={events}
-          step={step}
-          dir={dir}
-          onOpenProgress={(id) => openProgress(id)}
-          onRehearse={(id) => rehearseAgain(id)}
-          onRename={(id, name) => renameEvent(id, name)}
-          onDelete={(id) => deleteEvent(id)}
-        />
-      )}
+      {events.length > 0 &&
+        (isMobile ? (
+          <MobileCardArc
+            events={events}
+            onOpenProgress={(id) => openProgress(id)}
+            onRehearse={(id) => rehearseAgain(id)}
+            onRename={(id, name) => renameEvent(id, name)}
+            onDelete={(id) => deleteEvent(id)}
+          />
+        ) : (
+          <TalkGallery
+            events={events}
+            step={step}
+            dir={dir}
+            onOpenProgress={(id) => openProgress(id)}
+            onRehearse={(id) => rehearseAgain(id)}
+            onRename={(id, name) => renameEvent(id, name)}
+            onDelete={(id) => deleteEvent(id)}
+          />
+        ))}
 
       {/* "+ New" stays bottom-centre in BOTH states (same coords + size). */}
       <PlusButton onClick={() => setModalOpen(true)} />
@@ -234,6 +252,103 @@ interface CarouselProps {
   onRehearse: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+}
+
+interface ArcProps {
+  events: Event[];
+  onOpenProgress: (id: string) => void;
+  onRehearse: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}
+
+// Mobile cards = a circular-arc carousel. Cards sit on a large circle (centre
+// below the row, convex up) and travel along it as you swipe. The centre card
+// is upright/full; neighbours curve away, scaled + rotated to follow the arc.
+function MobileCardArc({ events, onOpenProgress, onRehearse, onRename, onDelete }: ArcProps) {
+  const n = events.length;
+  const [pos, setPos] = useState(0); // fractional carousel position; round() = centre
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ x: number; base: number } | null>(null);
+  const moved = useRef(false);
+
+  const STEP = 18; // degrees between cards
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 390;
+  const R = vw * 1.8; // arc radius (~1.8× screen width)
+  const DRAG_PER_INDEX = vw * 0.55; // px of drag that advances one card
+  const clampPos = (v: number) => Math.max(0, Math.min(n - 1, v));
+  const center = Math.round(pos);
+
+  const onDown = (e: React.PointerEvent) => {
+    // NOTE: no setPointerCapture — it would retarget the pointer to the
+    // container and swallow the cards' click events (tap-to-open).
+    drag.current = { x: e.clientX, base: pos };
+    moved.current = false;
+    setDragging(true);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 6) moved.current = true;
+    setPos(clampPos(d.base - dx / DRAG_PER_INDEX));
+  };
+  const onUp = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragging(false);
+    setPos((cur) => clampPos(Math.round(cur)));
+  };
+  const onCardClick = (i: number) => {
+    if (moved.current) return; // was a swipe, not a tap
+    if (i === Math.round(pos)) onOpenProgress(events[i].id);
+    else setPos(clampPos(i)); // tap a side card → snap to centre
+  };
+
+  return (
+    <div
+      className="home__arc"
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      {events.map((ev, i) => {
+        const angle = (i - pos) * STEP;
+        if (Math.abs(angle) > 64) return null; // cull far cards
+        const rad = (angle * Math.PI) / 180;
+        const x = R * Math.sin(rad);
+        const y = R * (1 - Math.cos(rad)); // edges dip down (convex up)
+        const scale = 1 - Math.min(Math.abs(angle) * 0.018, 0.4);
+        const opacity = 1 - Math.min(Math.abs(angle) * 0.014, 0.55);
+        return (
+          <div
+            key={ev.id}
+            className="home__arc-card"
+            onClick={() => onCardClick(i)}
+            style={{
+              transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${angle}deg) scale(${scale})`,
+              opacity,
+              zIndex: Math.round(100 - Math.abs(angle)),
+              transition: dragging
+                ? 'none'
+                : 'transform 0.35s cubic-bezier(0.2,0.9,0.3,1), opacity 0.35s ease',
+            }}
+          >
+            <TalkSheet
+              event={ev}
+              isActive={i === center}
+              style={{}}
+              onCardClick={() => {}}
+              onRehearse={() => onRehearse(ev.id)}
+              onRename={(name) => onRename(ev.id, name)}
+              onDelete={() => onDelete(ev.id)}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // 7 arch slots — card centre as a % of the viewport (x across, y down) plus a

@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore, selectActiveEvent } from '../state/store';
 import { AudiencePreview as AudiencePreviewScene } from '../scene/AudiencePreview';
 import { CloseButton } from '../components/CloseButton';
 import { ScreenTitle } from '../components/ScreenTitle';
+import { useIsMobile } from '../lib/useIsMobile';
 import { ROOM_LABELS, ROOM_ORDER } from '../lib/rooms';
 import type { RoomType } from '../state/types';
 
@@ -97,6 +98,35 @@ export function Setup() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isMobile = useIsMobile();
+  // Mobile wizard: one setting per step (where → many → warmth → attention →
+  // start). Desktop keeps the all-in-one panel below.
+  const [step, setStep] = useState(0);
+  const STEPS = 5;
+  const goNext = () => setStep((s) => Math.min(STEPS - 1, s + 1));
+  const goPrev = () => setStep((s) => Math.max(0, s - 1));
+  // Horizontal swipe between steps — ignored when the gesture starts on a
+  // control (chips / slider) so those keep their own touch behaviour.
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const onSheetDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('input, button')) {
+      swipe.current = null;
+      return;
+    }
+    swipe.current = { x: e.clientX, y: e.clientY };
+  };
+  const onSheetUp = (e: React.PointerEvent) => {
+    const s = swipe.current;
+    swipe.current = null;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) goNext();
+      else goPrev();
+    }
+  };
+
   const { audience } = draft;
   const roomType = draft.roomType ?? defaults.roomType;
   // Per-room people cap — a small huddle tops out at 15; every other room at 100.
@@ -105,97 +135,185 @@ export function Setup() {
   const warmthLabel = nearestLabel(audience.warmth, WARMTH);
   const attentionLabel = nearestLabel(audience.attention, ATTENTION);
 
-  return (
-    <div className="setup-screen settle-in">
-      {/* Full-bleed live audience preview. */}
-      <div className="setup__scene">
-        <AudiencePreviewScene
-          roomType={roomType}
-          size={audience.size}
-          warmth={audience.warmth}
-          attention={audience.attention}
-          cameraMode="firstPerson"
-        />
-      </div>
+  // Shared controls — used by both the desktop panel and the mobile steps.
+  const roomPills = (
+    <div className="setup-pills">
+      {ROOMS.map((r) => (
+        <button
+          key={r.type}
+          className={`pill ${draft.roomType === r.type ? 'is-selected' : ''}`}
+          onClick={() => {
+            pickRoom(r.type);
+            // Switching to the small huddle clamps an over-cap count down.
+            if (r.type === 'smallHuddle' && audience.size > HUDDLE_MAX) {
+              setAudience({ size: HUDDLE_MAX });
+            }
+          }}
+        >
+          {r.title}
+        </button>
+      ))}
+    </div>
+  );
+  const sizeControl = (
+    <div className="setup-size">
+      <input
+        className="setup-size__slider"
+        type="range"
+        min={1}
+        max={maxPeople}
+        value={sizeShown}
+        style={{
+          '--fill': `${((sizeShown - 1) / (maxPeople - 1)) * 100}%`,
+        } as React.CSSProperties}
+        onChange={(e) => setAudience({ size: Number(e.target.value) })}
+        aria-label="Audience size"
+      />
+      <span className="setup-size__value">
+        {sizeShown} {sizeShown === 1 ? 'person' : 'people'}
+      </span>
+    </div>
+  );
+  const warmthPills = (
+    <div className="setup-pills">
+      {WARMTH.map((w) => (
+        <button
+          key={w.label}
+          className={`pill ${warmthLabel === w.label ? 'is-selected' : ''}`}
+          onClick={() => setAudience({ warmth: w.value })}
+        >
+          {w.label}
+        </button>
+      ))}
+    </div>
+  );
+  const attentionPills = (
+    <div className="setup-pills">
+      {ATTENTION.map((a) => (
+        <button
+          key={a.label}
+          className={`pill ${attentionLabel === a.label ? 'is-selected' : ''}`}
+          onClick={() => setAudience({ attention: a.value })}
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
 
+  const scene = (
+    <div className="setup__scene">
+      <AudiencePreviewScene
+        roomType={roomType}
+        size={audience.size}
+        warmth={audience.warmth}
+        attention={audience.attention}
+        cameraMode="firstPerson"
+      />
+    </div>
+  );
+  const header = (
+    <>
       <CloseButton onClick={goHome} />
       {/* Same floating glass-pill title as every other screen (Progress etalon). */}
       <ScreenTitle>
         Setup{event ? <> · {event.name}</> : null}
       </ScreenTitle>
+    </>
+  );
+
+  // ===========================================================================
+  // MOBILE — full-screen audience behind a short bottom step-sheet. One setting
+  // at a time; Back / Next / swipe + dots; the final step starts the rehearsal.
+  // ===========================================================================
+  if (isMobile) {
+    const steps: { label: string; body: React.ReactNode }[] = [
+      { label: 'Where?', body: roomPills },
+      { label: 'How many?', body: sizeControl },
+      { label: 'Warmth?', body: warmthPills },
+      { label: 'Attention?', body: attentionPills },
+      {
+        label: 'Ready?',
+        body: (
+          <button className="setup-panel__start setup-sheet__start" onClick={onStart}>
+            {primaryLabel}
+          </button>
+        ),
+      },
+    ];
+    const current = steps[step];
+    return (
+      <div className="setup-screen settle-in">
+        {scene}
+        {header}
+        <section
+          className="setup-sheet"
+          onPointerDown={onSheetDown}
+          onPointerUp={onSheetUp}
+        >
+          <div className="setup-sheet__body" key={step}>
+            <div className="label setup-sheet__label">{current.label}</div>
+            {current.body}
+          </div>
+          <div className="setup-sheet__nav">
+            <button
+              className="btn btn--ghost btn--pill setup-sheet__back"
+              onClick={goPrev}
+              disabled={step === 0}
+            >
+              Back
+            </button>
+            <div className="setup-sheet__dots" aria-hidden>
+              {Array.from({ length: STEPS }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`setup-sheet__dot ${i === step ? 'is-active' : ''}`}
+                />
+              ))}
+            </div>
+            {step < STEPS - 1 ? (
+              <button
+                className="btn btn--pill setup-sheet__next"
+                onClick={goNext}
+              >
+                Next
+              </button>
+            ) : (
+              <span className="setup-sheet__nav-spacer" />
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="setup-screen settle-in">
+      {/* Full-bleed live audience preview. */}
+      {scene}
+
+      {header}
 
       {/* Right-side frosted control panel — all four questions stacked. */}
       <aside className="setup-panel">
         <div className="setup-q">
           <div className="setup-q__label">Where?</div>
-          <div className="setup-pills">
-            {ROOMS.map((r) => (
-              <button
-                key={r.type}
-                className={`pill ${draft.roomType === r.type ? 'is-selected' : ''}`}
-                onClick={() => {
-                  pickRoom(r.type);
-                  // Switching to the small huddle clamps an over-cap count down.
-                  if (r.type === 'smallHuddle' && audience.size > HUDDLE_MAX) {
-                    setAudience({ size: HUDDLE_MAX });
-                  }
-                }}
-              >
-                {r.title}
-              </button>
-            ))}
-          </div>
+          {roomPills}
         </div>
 
         <div className="setup-q">
           <div className="setup-q__label">How many?</div>
-          <div className="setup-size">
-            <input
-              className="setup-size__slider"
-              type="range"
-              min={1}
-              max={maxPeople}
-              value={sizeShown}
-              style={{
-                '--fill': `${((sizeShown - 1) / (maxPeople - 1)) * 100}%`,
-              } as React.CSSProperties}
-              onChange={(e) => setAudience({ size: Number(e.target.value) })}
-              aria-label="Audience size"
-            />
-            <span className="setup-size__value">
-              {sizeShown} {sizeShown === 1 ? 'person' : 'people'}
-            </span>
-          </div>
+          {sizeControl}
         </div>
 
         <div className="setup-q">
           <div className="setup-q__label">Warmth?</div>
-          <div className="setup-pills">
-            {WARMTH.map((w) => (
-              <button
-                key={w.label}
-                className={`pill ${warmthLabel === w.label ? 'is-selected' : ''}`}
-                onClick={() => setAudience({ warmth: w.value })}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
+          {warmthPills}
         </div>
 
         <div className="setup-q">
           <div className="setup-q__label">Attention?</div>
-          <div className="setup-pills">
-            {ATTENTION.map((a) => (
-              <button
-                key={a.label}
-                className={`pill ${attentionLabel === a.label ? 'is-selected' : ''}`}
-                onClick={() => setAudience({ attention: a.value })}
-              >
-                {a.label}
-              </button>
-            ))}
-          </div>
+          {attentionPills}
         </div>
 
         <div className="setup-panel__divider" />

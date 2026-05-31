@@ -165,4 +165,15 @@
   --dur-pulse: 1.6s;     /* recording-dot pulse */
   --dur-ripple: 1.3s;    /* ripple ring expand */
   --dur-glow: 1.7s;      /* glow wash bloom */
+
+  /* ===== RESPONSIVE ===================================================== */
+  /* ONE mobile breakpoint — phone portrait. Mirrors MOBILE_BREAKPOINT (640)
+     in src/lib/useIsMobile.ts; CSS uses @media (max-width: 640px). */
+  --mobile-bp: 640px; /* reference only — @media can't read a custom prop */
+
+  /* Notch / home-indicator insets (0 on devices without them). */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }

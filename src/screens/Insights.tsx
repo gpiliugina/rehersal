@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore, selectActiveEvent } from '../state/store';
 import { AudiencePreview as Scene, type ScreenHead } from '../scene/AudiencePreview';
 import { pickEmoji } from '../scene/audienceAnimation';
@@ -7,6 +7,7 @@ import type { EmojiReaction } from '../lib/useAudienceEngagement';
 import { MockVideoFrame } from '../components/MockVideoFrame';
 import { LiveStatChip } from '../components/LiveStatChip';
 import { TerminalFeed } from '../components/TerminalFeed';
+import { useIsMobile } from '../lib/useIsMobile';
 import { sampleTimeline } from '../scene/ReplayController';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Aura } from '../components/Aura';
@@ -57,6 +58,14 @@ export function Insights() {
   // hits Play. After that the mute toggle button drives both this state and
   // `v.muted` directly.
   const [isMuted, setIsMuted] = useState(false);
+
+  const isMobile = useIsMobile();
+  // Mobile Shorts: brief center play/pause icon flash on tap, and a draggable
+  // two-tone scrub bar.
+  const [tapFlash, setTapFlash] = useState(false);
+  const flashTimer = useRef<number | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const scrubbingRef = useRef(false);
 
   const cards = useMemo(
     () => (session ? buildInsightCards(session) : []),
@@ -351,6 +360,168 @@ export function Insights() {
 
   const transportLabel = isPlaying ? 'Pause' : ended ? 'Replay' : 'Play';
 
+  // ===========================================================================
+  // MOBILE — YouTube Shorts–style: full-bleed vertical video, tap to play/pause,
+  // one timed insight overlay at a time, a thin two-tone scrub bar, end overlay.
+  // Desktop layout (everything below this block) is untouched.
+  // ===========================================================================
+  if (isMobile) {
+    const playedFrac =
+      durationForScrubber > 0
+        ? Math.min(currentTime, durationForScrubber) / durationForScrubber
+        : 0;
+
+    const onTapVideo = () => {
+      onTransport();
+      setTapFlash(true);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(() => setTapFlash(false), 460);
+    };
+
+    const barFrac = (clientX: number) => {
+      const el = barRef.current;
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    };
+    const onBarDown = (e: React.PointerEvent) => {
+      scrubbingRef.current = true;
+      onScrub(barFrac(e.clientX) * (durationForScrubber || 0));
+      const move = (ev: PointerEvent) => {
+        if (scrubbingRef.current) {
+          onScrub(barFrac(ev.clientX) * (durationForScrubber || 0));
+        }
+      };
+      const up = () => {
+        scrubbingRef.current = false;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    };
+
+    return (
+      <div className="shorts settle-in">
+        {videoOk ? (
+          <video
+            ref={videoRef}
+            className="shorts__video"
+            src={videoSrc}
+            poster={session.posterDataUrl ?? '/video-poster.jpg'}
+            playsInline
+            preload="metadata"
+            controls={false}
+            onClick={onTapVideo}
+          />
+        ) : (
+          <div className="shorts__video shorts__video--mock" onClick={onTapVideo}>
+            <MockVideoFrame t={sessionPlayhead} warmth={session.audience.warmth} />
+          </div>
+        )}
+
+        {/* Header matches every other mobile page: the ● rehearsal wordmark
+            (app shell) sits on its own line at top, the page title stacks below
+            it via the shared <ScreenTitle>. The × is pinned top-right. */}
+        <CloseButton onClick={goHome} />
+        <ScreenTitle>{event ? `Insights · ${event.name}` : 'Insights'}</ScreenTitle>
+
+        {/* Center play/pause flash */}
+        {(tapFlash || !isPlaying) && (
+          <div className={`shorts__flash${tapFlash ? ' is-flash' : ''}`} aria-hidden>
+            <svg viewBox="0 0 24 24" width="34" height="34">
+              {isPlaying ? (
+                <g fill="#fff">
+                  <rect x="6" y="5" width="4" height="14" rx="1" />
+                  <rect x="14" y="5" width="4" height="14" rx="1" />
+                </g>
+              ) : (
+                <path d="M8 5 L19 12 L8 19 Z" fill="#fff" />
+              )}
+            </svg>
+          </div>
+        )}
+
+        {/* Stacking timed insight feed — bottom-anchored, newest at the base,
+            older cards pushed up + blurred/faded by depth. */}
+        <ShortsFeed cards={cards} playhead={sessionPlayhead} />
+
+        {/* End overlay — a calm "what next" over a soft cream scrim (so the
+            ink-deep stroked buttons stay legible). Tapping the scrim restarts
+            playback + hides the overlay, like tapping the video. */}
+        {ended && (
+          <div className="shorts__end" onClick={onRestart}>
+            <button
+              className="btn btn--secondary"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRestart();
+              }}
+            >
+              <svg
+                className="shorts__end-ico"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M20 11a8 8 0 1 1 -2.3 -5.6L20 8" />
+                <path d="M20 4v4h-4" />
+              </svg>
+              Watch again
+            </button>
+            {activeEventId && (
+              <>
+                <button
+                  className="btn btn--secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    rehearseAgain(activeEventId);
+                  }}
+                >
+                  Rehearse again
+                </button>
+                <button
+                  className="btn btn--secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openProgress(activeEventId);
+                  }}
+                >
+                  See progress
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Thin two-tone scrub bar — the only control */}
+        <div
+          className="shorts__bar"
+          ref={barRef}
+          onPointerDown={onBarDown}
+          role="slider"
+          aria-label="Scrub"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(durationForScrubber)}
+          aria-valuenow={Math.round(currentTime)}
+        >
+          <div className="shorts__bar-track">
+            <div
+              className="shorts__bar-played"
+              style={{ width: `${playedFrac * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="insights-screen settle-in">
       <div className="insights-screen__video">
@@ -582,6 +753,87 @@ export function Insights() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// ShortsFeed — the mobile stacking timed insight feed. Cards show their FULL
+// text (wrap to any height), newest at the base; older ones are pushed up by
+// the MEASURED height of the cards below them (+ a gap) so they never overlap
+// as they blur/fade. Derived purely from the playhead, so scrubbing the bar
+// rebuilds the whole stack for free.
+// =============================================================================
+
+const FEED_CAP = 6;
+const FEED_GAP = 8; // px between stacked cards
+const DEPTH_OPACITY = [1, 0.68, 0.4, 0.18, 0];
+const DEPTH_BLUR = [0, 1.5, 3, 5, 7];
+const cardKey = (c: InsightCard) => `${c.kind}-${c.t}`;
+
+function ShortsFeed({ cards, playhead }: { cards: InsightCard[]; playhead: number }) {
+  // Newest at the base (depth 0); cap the rendered count.
+  const feed = cards
+    .filter((c) => c.t <= playhead)
+    .slice(-FEED_CAP)
+    .map((c, i, arr) => ({ card: c, depth: arr.length - 1 - i }));
+
+  // Measured card heights, keyed by card. Re-measured every commit; converges
+  // (we only set state when a height actually changes) and runs before paint.
+  const refs = useRef(new Map<string, HTMLDivElement>());
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  useLayoutEffect(() => {
+    let changed = false;
+    const next = { ...heights };
+    for (const { card } of feed) {
+      const el = refs.current.get(cardKey(card));
+      if (el) {
+        const h = el.offsetHeight;
+        if (next[cardKey(card)] !== h) {
+          next[cardKey(card)] = h;
+          changed = true;
+        }
+      }
+    }
+    if (changed) setHeights(next);
+  });
+
+  // Bottom offset for a card at depth d = sum of (height + gap) of every card
+  // below it (depth < d). Fall back to an estimate until a card is measured.
+  const offsets = new Map<string, number>();
+  let acc = 0;
+  for (const { card } of [...feed].sort((a, b) => a.depth - b.depth)) {
+    offsets.set(cardKey(card), acc);
+    acc += (heights[cardKey(card)] ?? 46) + FEED_GAP;
+  }
+
+  return (
+    <div className="shorts__feed" aria-live="polite">
+      {feed.map(({ card, depth }) => {
+        const k = Math.min(depth, DEPTH_OPACITY.length - 1);
+        return (
+          <div
+            key={cardKey(card)}
+            ref={(el) => {
+              if (el) refs.current.set(cardKey(card), el);
+              else refs.current.delete(cardKey(card));
+            }}
+            className={`shorts__fcard shorts__fcard--${
+              card.kind === 'strongMoment' ? 'positive' : 'attention'
+            }${depth === 0 ? ' is-base' : ''}`}
+            style={{
+              bottom: `${offsets.get(cardKey(card)) ?? 0}px`,
+              opacity: DEPTH_OPACITY[k],
+              filter: `blur(${DEPTH_BLUR[k]}px)`,
+              transform: `scale(${1 - depth * 0.03})`,
+            }}
+          >
+            <span className="shorts__fdot" aria-hidden />
+            <span className="shorts__ftime">{mmss(card.t)}</span>
+            <span className="shorts__ftext">{card.detail}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

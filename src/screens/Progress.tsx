@@ -1,26 +1,12 @@
 import { ReactNode, useMemo, useRef, useState } from 'react';
 import { useStore, selectActiveEvent } from '../state/store';
+import { useIsMobile } from '../lib/useIsMobile';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { ConfirmDialog } from '../components/Modal';
 import { Aura } from '../components/Aura';
 import { CloseButton } from '../components/CloseButton';
 import { mmss, relativeTime } from '../lib/format';
-import { ROOM_LABELS } from '../lib/rooms';
 import type { Session } from '../state/types';
-
-// =============================================================================
-// Plain-language vocabulary used by the screen's sentences.
-// =============================================================================
-
-const WARMTH_WORDS = ['Skeptical', 'Reserved', 'Neutral', 'Warm', 'Friendly'];
-const ATTENTION_WORDS = ['Distracted', 'Drifting', 'Listening', 'Focused', 'Engaged'];
-function bucketWord(value: number, words: string[]): string {
-  const idx = Math.min(
-    words.length - 1,
-    Math.max(0, Math.floor(value * words.length)),
-  );
-  return words[idx];
-}
 
 // =============================================================================
 // Quoted-phrase generator — keyed to the talk name. No real speech-to-text;
@@ -90,6 +76,10 @@ export function Progress() {
   const deleteRehearsal = useStore((s) => s.deleteRehearsal);
   const goto = useStore((s) => s.goto);
 
+  const isMobile = useIsMobile();
+  // Mobile splits the two layers behind a segmented control.
+  const [mobileTab, setMobileTab] = useState<'insights' | 'recordings'>('insights');
+
   // The single rehearsal pending a delete-confirm, and the one mid-exit-anim.
   const [confirmingRehearsal, setConfirmingRehearsal] = useState<{ id: string; num: number } | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -116,17 +106,6 @@ export function Progress() {
     }, 280);
   }
 
-  const setup = event.homeSetup;
-  const metaLine = [
-    `${sessions.length} ${sessions.length === 1 ? 'rehearsal' : 'rehearsals'}`,
-    setup ? (ROOM_LABELS[setup.roomType] ?? setup.roomType) : null,
-    setup ? `${setup.audience.size}` : null,
-    setup ? bucketWord(setup.audience.warmth, WARMTH_WORDS) : null,
-    setup ? bucketWord(setup.audience.attention, ATTENTION_WORDS) : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
   const titleStrip = (
     <>
       <CloseButton onClick={goHome} />
@@ -134,7 +113,6 @@ export function Progress() {
         Progress ·{' '}
         <InlineEditableName value={event.name} onSave={(n) => renameEvent(event.id, n)} />
       </ScreenTitle>
-      <div className="progress2__meta">{metaLine}</div>
     </>
   );
 
@@ -147,7 +125,7 @@ export function Progress() {
           <article className="progress2__article">
             <div className="insight-pile">
               <div className="insight-paper">
-                <div className="insight-paper__eyebrow">Insight #1</div>
+                <div className="label insight-paper__eyebrow">Insight #1</div>
                 <p className="insight-paper__p">
                   No rehearsals yet. Start your first one and your coaching notes will
                   appear here — one insight paper per run.
@@ -184,99 +162,116 @@ export function Progress() {
   const pool = phrasePool(event.name);
   const newestFirst = [...sessions].reverse();
 
+  // Pieces shared by the desktop two-column layout and the mobile segmented one.
+  const insightPapers = newestFirst.map((s, i) => (
+    <InsightPaper key={s.id} session={s} num={N - i} pool={pool} />
+  ));
+  const recordingCards = newestFirst.map((s, i) => {
+    const num = N - i;
+    const removing = removingId === s.id;
+    const style = {
+      backgroundImage: s.posterDataUrl
+        ? `url(${s.posterDataUrl}), linear-gradient(135deg, #4a4350 0%, #2c303d 100%)`
+        : undefined,
+    } as React.CSSProperties;
+    return (
+      <div
+        key={s.id}
+        className={`vcard${removing ? ' vcard--removing' : ''}`}
+        style={style}
+        role="button"
+        tabIndex={0}
+        onClick={() => openInsights(event.id, s.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openInsights(event.id, s.id);
+          }
+        }}
+        aria-label={`Open rehearsal #${num}`}
+      >
+        <button
+          className="vcard__trash"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmingRehearsal({ id: s.id, num });
+          }}
+          aria-label={`Delete rehearsal #${num}`}
+          title="Delete rehearsal"
+        >
+          <IconTrash />
+        </button>
+        <div className="vcard__overlay">
+          <span className="vcard__num">Rehearsal #{num}</span>
+          <span className="vcard__meta">
+            {relativeTime(s.createdAt)} · {mmss(s.durationSec)}
+          </span>
+        </div>
+      </div>
+    );
+  });
+  const actions = (
+    <div className="progress2__btn-row">
+      <button
+        className="btn btn--ghost btn--pill"
+        onClick={() => editSetup(event.id, 'progress')}
+      >
+        Edit setup
+      </button>
+      <button className="btn btn--pill" onClick={() => rehearseAgain(event.id)}>
+        New rehearsal
+      </button>
+    </div>
+  );
+
   return (
     <div className="progress-screen progress2 settle-in">
       <Aura className="aura--purple-pink aura--progress-hero" />
       <Aura className="aura--orange aura--progress-bottom" />
       {titleStrip}
 
-      <div className="progress2__body">
-        {/* LEFT — a pile of insight papers, latest on top (scrolls). */}
-        <article className="progress2__article">
-          <div className="insight-pile">
-            {newestFirst.map((s, i) => (
-              <InsightPaper
-                key={s.id}
-                session={s}
-                num={N - i}
-                pool={pool}
-                rot={i % 2 === 0 ? '-0.5deg' : '0.5deg'}
-                z={N - i}
-                overlap={i > 0}
-              />
-            ))}
+      {isMobile ? (
+        // Mobile — segmented Insights / Recordings + bottom-pinned actions.
+        <div className="progress2__mobile">
+          <div className="seg-tabs progress2__seg">
+            <button
+              className={`seg-tabs__btn ${mobileTab === 'insights' ? 'is-active' : ''}`}
+              onClick={() => setMobileTab('insights')}
+            >
+              Insights
+            </button>
+            <button
+              className={`seg-tabs__btn ${mobileTab === 'recordings' ? 'is-active' : ''}`}
+              onClick={() => setMobileTab('recordings')}
+            >
+              Recordings
+            </button>
           </div>
-        </article>
-
-        {/* RIGHT — scrollable newest-first video list + actions. */}
-        <aside className="progress2__rail">
-          <div className="progress2__pile-wrap">
-            <div className="vpile">
-              {newestFirst.map((s, i) => {
-                const num = N - i;
-                const removing = removingId === s.id;
-                const style = {
-                  backgroundImage: s.posterDataUrl
-                    ? `url(${s.posterDataUrl}), linear-gradient(135deg, #4a4350 0%, #2c303d 100%)`
-                    : undefined,
-                } as React.CSSProperties;
-                return (
-                  <div
-                    key={s.id}
-                    className={`vcard${removing ? ' vcard--removing' : ''}`}
-                    style={style}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openInsights(event.id, s.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openInsights(event.id, s.id);
-                      }
-                    }}
-                    aria-label={`Open rehearsal #${num}`}
-                  >
-                    <button
-                      className="vcard__trash"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmingRehearsal({ id: s.id, num });
-                      }}
-                      aria-label={`Delete rehearsal #${num}`}
-                      title="Delete rehearsal"
-                    >
-                      <IconTrash />
-                    </button>
-                    <div className="vcard__overlay">
-                      <span className="vcard__num">Rehearsal #{num}</span>
-                      <span className="vcard__meta">
-                        {relativeTime(s.createdAt)} · {mmss(s.durationSec)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+          {mobileTab === 'insights' ? (
+            <div className="progress2__minsights">
+              <div className="insight-pile">{insightPapers}</div>
             </div>
-          </div>
+          ) : (
+            <div className="progress2__mrec">{recordingCards}</div>
+          )}
+          <div className="progress2__mactions">{actions}</div>
+        </div>
+      ) : (
+        <div className="progress2__body">
+          {/* LEFT — a pile of insight papers, latest on top (scrolls). */}
+          <article className="progress2__article">
+            <div className="insight-pile">{insightPapers}</div>
+          </article>
 
-          <div className="progress2__rail-actions">
-            <div className="progress2__btn-row">
-              <button
-                className="btn btn--ghost btn--pill"
-                onClick={() => editSetup(event.id, 'progress')}
-              >
-                Edit setup
-              </button>
-              <button
-                className="btn btn--pill"
-                onClick={() => rehearseAgain(event.id)}
-              >
-                New rehearsal
-              </button>
+          {/* RIGHT — scrollable newest-first video list + actions. */}
+          <aside className="progress2__rail">
+            <div className="progress2__pile-wrap">
+              <div className="vpile">{recordingCards}</div>
             </div>
-          </div>
-        </aside>
-      </div>
+            <div className="progress2__rail-actions">{actions}</div>
+          </aside>
+        </div>
+      )}
 
       {confirmingRehearsal && (
         <ConfirmDialog
@@ -301,16 +296,10 @@ function InsightPaper({
   session,
   num,
   pool,
-  rot,
-  z,
-  overlap,
 }: {
   session: Session;
   num: number;
   pool: string[];
-  rot: string;
-  z: number;
-  overlap: boolean;
 }) {
   const d = session.diagnostics;
   const [p0, p1] = pool;
@@ -330,15 +319,9 @@ function InsightPaper({
         ? 'Plant your feet shoulder-width before emphasis moments. The room reads your stability.'
         : 'Keep doing what worked here — same pacing, same grounded stance — and push it one notch further.';
 
-  const style = {
-    '--rot': rot,
-    zIndex: z,
-    marginTop: overlap ? undefined : 0,
-  } as React.CSSProperties;
-
   return (
-    <article className="insight-paper" style={style}>
-      <div className="insight-paper__eyebrow">Insight #{num}</div>
+    <article className="insight-paper">
+      <div className="label insight-paper__eyebrow">Insight #{num}</div>
 
       <div className="insight-paper__body">
         <div className="insight-paper__obs">
@@ -375,7 +358,7 @@ function InsightPaper({
 
         <aside className="insight-tip">
           <IconBulb />
-          <div className="insight-tip__eyebrow">Pay attention</div>
+          <div className="label insight-tip__eyebrow">Pay attention</div>
           <p className="insight-tip__p">{tip}</p>
         </aside>
       </div>
